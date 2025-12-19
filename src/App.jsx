@@ -1,45 +1,77 @@
 import { useState, useEffect } from "react";
 import "./App.css";
-const API_URL = "https://script.google.com/macros/s/AKfycbyhwsQKYu29hbkKebinEAj_WnFXCJ_0xSeBbuYjF9pF5xEo5K2VIpSQMLeaeR1b8uu_gQ/exec";
 
-// Ứng dụng quản lý giải cầu lông: lưu người chơi, trận đấu, xếp hạng, lịch sử
+const API_URL =
+    "https://script.google.com/macros/s/AKfycbwW0ohBk_2802soszIdprc01ohAeqlpAxOpH1yHclMMM5m38JRp75xFsLPHb9RtWIhLHg/exec";
 
 function App() {
     const [isLoaded, setIsLoaded] = useState(false);
-    // Danh sách người chơi
+
     const [players, setPlayers] = useState([]);
-    // Danh sách trận đấu
     const [matches, setMatches] = useState([]);
-    // Tên người chơi mới nhập
+    const [scoreConfig, setScoreConfig] = useState([]);
+
     const [newPlayerName, setNewPlayerName] = useState("");
-    // Tab đang hiển thị: xếp hạng, tạo trận, người chơi, lịch sử
     const [activeTab, setActiveTab] = useState("ranking");
-    // Loại trận đấu: đơn hay đôi
     const [matchType, setMatchType] = useState("singles");
-    // Đội 1 (danh sách id người chơi)
+
     const [team1, setTeam1] = useState({ players: [] });
-    // Đội 2 (danh sách id người chơi)
     const [team2, setTeam2] = useState({ players: [] });
 
-    // Lấy dữ liệu người chơi và trận đấu từ localStorage khi load app
-    // useEffect(() => {
-    //     const savedPlayers = localStorage.getItem("badmintonPlayers");
-    //     const savedMatches = localStorage.getItem("badmintonMatches");
-    //     if (savedPlayers) setPlayers(JSON.parse(savedPlayers));
-    //     if (savedMatches) setMatches(JSON.parse(savedMatches));
-    // }, []);
+    const [scoreTeam1, setScoreTeam1] = useState("");
+    const [scoreTeam2, setScoreTeam2] = useState("");
+
+    /* =======================
+       HELPERS
+    ======================= */
+
+    const getPlayerName = (id) =>
+        players.find((p) => p.id === id)?.name || "Không xác định";
+
+    const formatDateLocal = (isoString) => {
+        const d = new Date(isoString);
+        return d.toLocaleString("vi-VN", {
+            hour12: false,
+            dateStyle: "short",
+            timeStyle: "short",
+        });
+    };
+
+    const getDivisorByPointDiff = (diff) => {
+        if (!scoreConfig.length) return 2;
+        return (
+            scoreConfig.find((c) => diff <= c.maxPointDiff)?.divisor ??
+            scoreConfig[scoreConfig.length - 1].divisor
+        );
+    };
+
+    const getTeamPoints = (teamPlayers, rankingMap) => {
+        return (teamPlayers || []).reduce((sum, pid) => {
+            return sum + (rankingMap[pid]?.points ?? 0);
+        }, 0);
+    };
+
+    /* =======================
+       LOAD DATA
+    ======================= */
+
     useEffect(() => {
         const loadData = async () => {
             const res = await fetch(API_URL);
             const data = await res.json();
 
-            const fixedPlayers = (data.players || []).map(p => ({
-                id: p.id ?? Date.now() + Math.random(),
-                name: p.name
+            setScoreConfig(data.scoreConfig || []);
+
+            const fixedPlayers = (data.players || []).map((p) => ({
+                id: p.id ?? crypto.randomUUID(),
+                name: p.name,
             }));
 
-            const fixedMatches = (data.matches || []).filter(m =>
-                m.team1 && m.team2 && m.winner
+            const fixedMatches = (data.matches || []).filter(
+                (m) =>
+                    m.team1 &&
+                    m.team2 &&
+                    (m.winner || (m.score1 != null && m.score2 != null))
             );
 
             setPlayers(fixedPlayers);
@@ -50,17 +82,10 @@ function App() {
         loadData();
     }, []);
 
+    /* =======================
+       AUTO SAVE (FULL PAYLOAD)
+    ======================= */
 
-
-    // Lưu người chơi vào localStorage khi thay đổi
-    // useEffect(() => {
-    //     localStorage.setItem("badmintonPlayers", JSON.stringify(players));
-    // }, [players]);
-
-    // // Lưu trận đấu vào localStorage khi thay đổi
-    // useEffect(() => {
-    //     localStorage.setItem("badmintonMatches", JSON.stringify(matches));
-    // }, [matches]);
     useEffect(() => {
         if (!isLoaded) return;
 
@@ -69,67 +94,43 @@ function App() {
                 method: "POST",
                 mode: "no-cors",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ players, matches })
+                body: JSON.stringify({
+                    players,
+                    matches,
+                    scoreConfig,
+                }),
             });
         }, 800);
 
         return () => clearTimeout(timeout);
-    }, [players, matches, isLoaded]);
+    }, [players, matches, scoreConfig, isLoaded]);
 
+    /* =======================
+       PLAYERS
+    ======================= */
 
-    // Thêm người chơi mới vào danh sách
     const addPlayer = () => {
-        if (newPlayerName.trim()) {
-            setPlayers([
-                ...players,
-                { id: Date.now(), name: newPlayerName.trim() },
-            ]);
-            setNewPlayerName("");
-        }
+        if (!newPlayerName.trim()) return;
+
+        setPlayers([
+            ...players,
+            { id: crypto.randomUUID(), name: newPlayerName.trim() },
+        ]);
+        setNewPlayerName("");
     };
 
-    // Xoá người chơi khỏi danh sách
     const deletePlayer = (id) => {
         setPlayers(players.filter((p) => p.id !== id));
     };
 
-    // Tạo trận đấu mới, lưu vào danh sách trận
-    // winnerTeam: 1 hoặc 2 (đội thắng)
-    const createMatch = (winnerTeam) => {
-        // Kiểm tra hợp lệ: trận đơn (1 vs 1), trận đôi (2 vs 2)
-        const isValidSingles =
-            matchType === "singles" &&
-            team1.players.length === 1 &&
-            team2.players.length === 1;
-        const isValidDoubles =
-            matchType === "doubles" &&
-            team1.players.length === 2 &&
-            team2.players.length === 2;
-        if (isValidSingles || isValidDoubles) {
-            setMatches([
-                ...matches,
-                {
-                    id: crypto.randomUUID(),
-                    type: matchType,
-                    team1: team1.players,
-                    team2: team2.players,
-                    winner: winnerTeam,
-                    date: new Date().toISOString(),
-                },
-            ]);
-            // Reset chọn đội và loại trận về mặc định
-            setTeam1({ players: [] });
-            setTeam2({ players: [] });
-            setMatchType("singles");
-            alert("Trận đấu đã được lưu!");
-        }
-    };
+    /* =======================
+       TEAMS
+    ======================= */
 
-    // Thêm người chơi vào đội (team: 1 hoặc 2)
     const addPlayerToTeam = (team, playerId) => {
         const teamState = team === 1 ? team1 : team2;
         const maxPlayers = matchType === "singles" ? 1 : 2;
-        // Chỉ thêm nếu chưa đủ số lượng và chưa có trong đội
+
         if (
             teamState.players.length < maxPlayers &&
             !teamState.players.includes(playerId)
@@ -138,36 +139,100 @@ function App() {
                 ...teamState,
                 players: [...teamState.players, playerId],
             };
-            if (team === 1) setTeam1(newTeam);
-            else setTeam2(newTeam);
+            team === 1 ? setTeam1(newTeam) : setTeam2(newTeam);
         }
     };
 
-    // Xoá người chơi khỏi đội
     const removePlayerFromTeam = (team, playerId) => {
         const teamState = team === 1 ? team1 : team2;
         const newTeam = {
             ...teamState,
             players: teamState.players.filter((id) => id !== playerId),
         };
-        if (team === 1) setTeam1(newTeam);
-        else setTeam2(newTeam);
-    };
-    const formatDateLocal = (isoString) => {
-        const d = new Date(isoString);
-        return d.toLocaleString("vi-VN", {
-            hour12: false,
-            dateStyle: "short",
-            timeStyle: "short"
-        });
+        team === 1 ? setTeam1(newTeam) : setTeam2(newTeam);
     };
 
-    // Tính bảng xếp hạng dựa trên kết quả các trận
-    // Điểm: thắng trận đơn +3, thua +1; thắng đôi +2, thua +1
-    // Trả về mảng đã sắp xếp theo điểm giảm dần
-    const calculateRanking = () => {
+    /* =======================
+       CREATE MATCH
+    ======================= */
+
+    const createMatch = () => {
+        const isValidSingles =
+            matchType === "singles" &&
+            team1.players.length === 1 &&
+            team2.players.length === 1;
+
+        const isValidDoubles =
+            matchType === "doubles" &&
+            team1.players.length === 2 &&
+            team2.players.length === 2;
+
+        if (!(isValidSingles || isValidDoubles)) return;
+
+        const allPlayers = [...team1.players, ...team2.players];
+        if (new Set(allPlayers).size !== allPlayers.length) {
+            alert("Một người không thể ở cả hai đội");
+            return;
+        }
+
+        const s1 = Number(scoreTeam1);
+        const s2 = Number(scoreTeam2);
+
+        if (!Number.isFinite(s1) || !Number.isFinite(s2) || s1 === s2) {
+            alert("Vui lòng nhập điểm hợp lệ (không được hòa)");
+            return;
+        }
+
+        /* ===== SNAPSHOT RANKING HIỆN TẠI ===== */
+        const currentRanking = calculateRanking(true); // chế độ snapshot
+
+        const team1PtsBefore = getTeamPoints(team1.players, currentRanking);
+        const team2PtsBefore = getTeamPoints(team2.players, currentRanking);
+
+        const ratingDiff = Math.abs(team1PtsBefore - team2PtsBefore);
+        const scoreDiff = Math.abs(s1 - s2);
+
+        const divisorUsed = getDivisorByPointDiff(ratingDiff);
+        const pointDelta = Math.max(1, Math.round(scoreDiff / divisorUsed));
+
+        setMatches([
+            ...matches,
+            {
+                id: crypto.randomUUID(),
+                type: matchType,
+                team1: team1.players,
+                team2: team2.players,
+                score1: s1,
+                score2: s2,
+                winner: s1 > s2 ? 1 : 2,
+                date: new Date().toISOString(),
+                meta: {
+                    team1PtsBefore,
+                    team2PtsBefore,
+                    ratingDiff,
+                    divisorUsed,
+                    scoreDiff,
+                    pointDelta,
+                },
+            },
+        ]);
+
+        setTeam1({ players: [] });
+        setTeam2({ players: [] });
+        setMatchType("singles");
+        setScoreTeam1("");
+        setScoreTeam2("");
+
+        alert("Trận đấu đã được lưu (đã chốt điểm)");
+    };
+
+    /* =======================
+       RANKING
+    ======================= */
+
+    const calculateRanking = (forSnapshot = false) => {
         const ranking = {};
-        // Khởi tạo thông tin cho từng người chơi
+
         players.forEach((p) => {
             ranking[p.id] = {
                 name: p.name,
@@ -177,115 +242,89 @@ function App() {
             };
         });
 
-        // Tính điểm và số trận cho từng người chơi
-        matches.forEach((match) => {
-            const winner = match.winner;
-            const loser = match.winner === 1 ? 2 : 1;
+        const sortedMatches = [...matches].sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+        );
 
-            if (match.type === "singles") {
-                // Trận đơn: đội thắng +3, thua +1
-                match[`team${winner}`].forEach((pid) => {
-                    ranking[pid].points += 3;
-                    ranking[pid].wins += 1;
-                });
-                match[`team${loser}`].forEach((pid) => {
-                    ranking[pid].points += 1;
-                });
-            } else {
-                // Trận đôi: đội thắng +2, thua +1
-                match[`team${winner}`].forEach((pid) => {
-                    ranking[pid].points += 2;
-                    ranking[pid].wins += 1;
-                });
-                match[`team${loser}`].forEach((pid) => {
-                    ranking[pid].points += 1;
-                });
-            }
-            // Tăng tổng số trận cho mỗi người chơi
-            match.team1.forEach((pid) => (ranking[pid].totalMatches += 1));
-            match.team2.forEach((pid) => (ranking[pid].totalMatches += 1));
+        sortedMatches.forEach((match) => {
+            if (!match.meta?.pointDelta) return;
+
+            const delta = match.meta.pointDelta;
+            const winnerTeam = match.winner;
+            const loserTeam = winnerTeam === 1 ? 2 : 1;
+
+            match[`team${winnerTeam}`].forEach((pid) => {
+                ranking[pid].points += delta;
+                ranking[pid].wins += 1;
+            });
+
+            match[`team${loserTeam}`].forEach((pid) => {
+                ranking[pid].points -= delta;
+            });
+
+            match.team1.forEach((pid) => ranking[pid].totalMatches++);
+            match.team2.forEach((pid) => ranking[pid].totalMatches++);
         });
 
-        // Sắp xếp theo điểm giảm dần
+        if (forSnapshot) return ranking;
+
         return Object.values(ranking).sort((a, b) => b.points - a.points);
     };
 
-    // Lấy tên người chơi theo id
-    const getPlayerName = (id) =>
-        players.find((p) => p.id === id)?.name || "Không xác định";
+    const rankingData = calculateRanking();
 
-    // Render giao diện chính
+    /* =======================
+       RENDER
+    ======================= */
+
     return (
         <div className="app-container">
-            {/* Header: Tiêu đề ứng dụng */}
             <header className="app-header">
                 <h1 className="header-title">BADMINTON LEGEND ALLIANCE</h1>
             </header>
 
-            {/* Navigation: Chuyển tab giữa các chức năng */}
+            {/* ---- NAV ---- */}
             <nav className="nav-bar">
-                <button
-                    className={`nav-btn ${activeTab === "ranking" ? "active" : ""}`}
-                    onClick={() => setActiveTab("ranking")}
-                >
-                    Xếp Hạng
-                </button>
-                <button
-                    className={`nav-btn ${activeTab === "createMatch" ? "active" : ""}`}
-                    onClick={() => setActiveTab("createMatch")}
-                >
-                    Trận Đấu
-                </button>
-                <button
-                    className={`nav-btn ${activeTab === "players" ? "active" : ""}`}
-                    onClick={() => setActiveTab("players")}
-                >
-                    Người Chơi
-                </button>
-                <button
-                    className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
-                    onClick={() => setActiveTab("history")}
-                >
-                    Lịch Sử
-                </button>
+                {[
+                    ["ranking", "Xếp Hạng"],
+                    ["createMatch", "Trận Đấu"],
+                    ["players", "Người Chơi"],
+                    ["history", "Lịch Sử"],
+                    ["config", "Cấu Hình"],
+                ].map(([key, label]) => (
+                    <button
+                        key={key}
+                        className={`nav-btn ${
+                            activeTab === key ? "active" : ""
+                        }`}
+                        onClick={() => setActiveTab(key)}
+                    >
+                        {label}
+                    </button>
+                ))}
             </nav>
 
-            {/* Main Content: Hiển thị nội dung theo tab */}
+            {/* ---- CONTENT ---- */}
             <main className="main-content">
-                {/* Tab Xếp Hạng */}
+                {/* Xếp hạng */}
                 {activeTab === "ranking" && (
                     <section className="section">
                         <h2 className="section-title">Bảng Xếp Hạng</h2>
-                        {calculateRanking().length === 0 ? (
-                            <div className="empty-state">Chưa có dữ liệu</div>
-                        ) : (
-                            <div className="ranking-list">
-                                {calculateRanking().map((player, idx) => (
-                                    <div
-                                        key={player.name}
-                                        className="ranking-item"
-                                    >
-                                        <div className="rank-number">
-                                            #{idx + 1}
-                                        </div>
-                                        <div className="player-details">
-                                            <div className="player-name">
-                                                {player.name}
-                                            </div>
-                                            <div className="player-stats">
-                                                {player.totalMatches} trận • {player.wins} thắng
-                                            </div>
-                                        </div>
-                                        <div className="player-points">
-                                            {player.points}
-                                        </div>
+
+                        {rankingData.map((p, i) => (
+                            <div key={p.name + i} className="ranking-item">
+                                <div className="rank-number">#{i + 1}</div>
+                                <div className="player-details">
+                                    <div className="player-name">{p.name}</div>
+                                    <div className="player-stats">
+                                        {p.totalMatches} trận • {p.wins} thắng
                                     </div>
-                                ))}
+                                </div>
+                                <div className="player-points">{p.points}</div>
                             </div>
-                        )}
+                        ))}
                     </section>
                 )}
-
                 {/* Tab Tạo Trận Đấu */}
                 {activeTab === "createMatch" && (
                     <section className="section">
@@ -343,7 +382,10 @@ function App() {
                                                 <button
                                                     className="remove-tag-btn"
                                                     onClick={() =>
-                                                        removePlayerFromTeam(1, playerId)
+                                                        removePlayerFromTeam(
+                                                            1,
+                                                            playerId
+                                                        )
                                                     }
                                                 >
                                                     ✕
@@ -365,7 +407,10 @@ function App() {
                                                 key={player.id}
                                                 className="player-select-btn"
                                                 onClick={() =>
-                                                    addPlayerToTeam(1, player.id)
+                                                    addPlayerToTeam(
+                                                        1,
+                                                        player.id
+                                                    )
                                                 }
                                             >
                                                 {player.name}
@@ -397,7 +442,10 @@ function App() {
                                                 <button
                                                     className="remove-tag-btn"
                                                     onClick={() =>
-                                                        removePlayerFromTeam(2, playerId)
+                                                        removePlayerFromTeam(
+                                                            2,
+                                                            playerId
+                                                        )
                                                     }
                                                 >
                                                     ✕
@@ -419,7 +467,10 @@ function App() {
                                                 key={player.id}
                                                 className="player-select-btn"
                                                 onClick={() =>
-                                                    addPlayerToTeam(2, player.id)
+                                                    addPlayerToTeam(
+                                                        2,
+                                                        player.id
+                                                    )
                                                 }
                                             >
                                                 {player.name}
@@ -429,19 +480,65 @@ function App() {
                             </div>
                         </div>
 
-                        {/* Chọn đội thắng và lưu trận */}
-                        <div className="result-buttons">
+                        {/* ===== NEW: Nhập kết quả trận ===== */}
+                        <div
+                            className="match-type-group"
+                            style={{ marginTop: 12, width: "100%" }}
+                        >
+                            <div
+                                style={{
+                                    display: "flex",
+                                    gap: 10,
+                                    alignItems: "center",
+                                    width: "100%",
+                                }}
+                            >
+                                <input
+                                    type="number"
+                                    className="input-field"
+                                    placeholder="Điểm đội 1"
+                                    value={scoreTeam1}
+                                    onChange={(e) =>
+                                        setScoreTeam1(e.target.value)
+                                    }
+                                    style={{ flex: 1, minWidth: 0 }}
+                                />
+
+                                <span
+                                    style={{ fontWeight: 500, flexShrink: 0 }}
+                                >
+                                    -
+                                </span>
+
+                                <input
+                                    type="number"
+                                    className="input-field"
+                                    placeholder="Điểm đội 2"
+                                    value={scoreTeam2}
+                                    onChange={(e) =>
+                                        setScoreTeam2(e.target.value)
+                                    }
+                                    style={{ flex: 1, minWidth: 0 }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Chọn đội thắng và lưu trận (giữ UI cũ, nhưng winner sẽ tự tính theo score) */}
+                        <div
+                            className="result-buttons"
+                            style={{
+                                marginTop: 12,
+                                width: "100%",
+                                display: "flex",
+                                gap: 10,
+                                alignItems: "center",
+                            }}
+                        >
                             <button
                                 className="btn btn-primary"
-                                onClick={() => createMatch(1)}
+                                onClick={() => createMatch()}
                             >
-                                Đội 1 Thắng
-                            </button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={() => createMatch(2)}
-                            >
-                                Đội 2 Thắng
+                                Lưu kết quả trận đấu
                             </button>
                         </div>
                     </section>
@@ -458,8 +555,12 @@ function App() {
                                 type="text"
                                 className="input-field"
                                 value={newPlayerName}
-                                onChange={(e) => setNewPlayerName(e.target.value)}
-                                onKeyPress={(e) => e.key === "Enter" && addPlayer()}
+                                onChange={(e) =>
+                                    setNewPlayerName(e.target.value)
+                                }
+                                onKeyPress={(e) =>
+                                    e.key === "Enter" && addPlayer()
+                                }
                                 placeholder="Nhập tên..."
                             />
                             <button
@@ -472,15 +573,31 @@ function App() {
 
                         {/* Danh sách người chơi hiện tại */}
                         {players.length === 0 ? (
-                            <div className="empty-state">Chưa có người chơi</div>
+                            <div className="empty-state">
+                                Chưa có người chơi
+                            </div>
                         ) : (
                             <div className="players-list">
                                 {players.map((player) => (
-                                    <div key={player.id} className="player-item">
-                                        <div className="player-name">{player.name}</div>
+                                    <div
+                                        key={player.id}
+                                        className="player-item"
+                                    >
+                                        <div className="player-name">
+                                            {player.name}
+                                        </div>
                                         <button
                                             className="btn-delete"
-                                            onClick={() => deletePlayer(player.id)}
+                                            type="button"
+                                            onClick={() => {
+                                                if (
+                                                    window.confirm(
+                                                        `Bạn có chắc muốn xoá "${player.name}" không?`
+                                                    )
+                                                ) {
+                                                    deletePlayer(player.id);
+                                                }
+                                            }}
                                         >
                                             Xoá
                                         </button>
@@ -503,20 +620,64 @@ function App() {
                                     .slice()
                                     .reverse()
                                     .map((match) => (
-                                        <div key={match.id} className="history-item">
+                                        <div
+                                            key={match.id}
+                                            className="history-item"
+                                        >
                                             <div className="history-header">
                                                 <span className="match-type">
-                                                    {match.type === "singles" ? "Đơn" : "Đôi"}
+                                                    {match.type === "singles"
+                                                        ? "Đơn"
+                                                        : "Đôi"}
                                                 </span>
-                                                <span className="match-date">{formatDateLocal(match.date)}</span>
+                                                <span className="match-date">
+                                                    {formatDateLocal(
+                                                        match.date
+                                                    )}
+                                                </span>
+                                            </div>
+                                            {/* NEW: show score nếu có */}
+                                            <div
+                                                style={{
+                                                    fontWeight: 700,
+                                                    margin: "6px 0",
+                                                    display: "flex",
+                                                    justifyContent: "center",
+                                                    fontSize: 18,
+                                                }}
+                                            >
+                                                {match.score1 != null &&
+                                                match.score2 != null
+                                                    ? `${match.score1} - ${match.score2}`
+                                                    : ""}
                                             </div>
                                             <div className="history-teams">
-                                                <div className={`history-team ${match.winner === 1 ? "winner" : ""}`}>
-                                                    {match.team1.map((id) => getPlayerName(id)).join(", ")}
+                                                <div
+                                                    className={`history-team ${
+                                                        match.winner === 1
+                                                            ? "winner"
+                                                            : ""
+                                                    }`}
+                                                >
+                                                    {match.team1
+                                                        .map((id) =>
+                                                            getPlayerName(id)
+                                                        )
+                                                        .join(", ")}
                                                 </div>
                                                 <span className="vs">vs</span>
-                                                <div className={`history-team ${match.winner === 2 ? "winner" : ""}`}>
-                                                    {match.team2.map((id) => getPlayerName(id)).join(", ")}
+                                                <div
+                                                    className={`history-team ${
+                                                        match.winner === 2
+                                                            ? "winner"
+                                                            : ""
+                                                    }`}
+                                                >
+                                                    {match.team2
+                                                        .map((id) =>
+                                                            getPlayerName(id)
+                                                        )
+                                                        .join(", ")}
                                                 </div>
                                             </div>
                                         </div>
@@ -525,6 +686,271 @@ function App() {
                         )}
                     </section>
                 )}
+                {/* Tab Cấu hình */}
+                {/* {activeTab === "config" && (
+                    <section className="section">
+                        <h2 className="section-title">Cấu hình tính điểm</h2>
+
+                        <table
+                            style={{
+                                width: "100%",
+                                borderCollapse: "collapse",
+                            }}
+                        >
+                            <thead>
+                                <tr>
+                                    <th style={{ textAlign: "left" }}>
+                                        Chênh lệch tối đa
+                                    </th>
+                                    <th style={{ textAlign: "left" }}>
+                                        Hệ số chia
+                                    </th>
+                                    <th />
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                {scoreConfig.map((row, idx) => (
+                                    <tr key={idx}>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                className="input-field"
+                                                value={row.maxPointDiff}
+                                                onChange={(e) => {
+                                                    const v = [...scoreConfig];
+                                                    v[idx].maxPointDiff =
+                                                        Number(e.target.value);
+                                                    setScoreConfig(v);
+                                                }}
+                                            />
+                                        </td>
+
+                                        <td>
+                                            <input
+                                                type="number"
+                                                className="input-field"
+                                                value={row.divisor}
+                                                onChange={(e) => {
+                                                    const v = [...scoreConfig];
+                                                    v[idx].divisor = Number(
+                                                        e.target.value
+                                                    );
+                                                    setScoreConfig(v);
+                                                }}
+                                            />
+                                        </td>
+
+                                        <td>
+                                            <button
+                                                className="btn-delete"
+                                                onClick={() => {
+                                                    const v =
+                                                        scoreConfig.filter(
+                                                            (_, i) => i !== idx
+                                                        );
+                                                    setScoreConfig(v);
+                                                }}
+                                            >
+                                                Xoá
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        <div
+                            style={{ marginTop: 12, display: "flex", gap: 10 }}
+                        >
+                            <button
+                                className="btn"
+                                onClick={() =>
+                                    setScoreConfig([
+                                        ...scoreConfig,
+                                        { maxPointDiff: 0, divisor: 1 },
+                                    ])
+                                }
+                            >
+                                + Thêm dòng
+                            </button>
+
+                            <button
+                                className="btn btn-primary"
+                                onClick={async () => {
+                                    await fetch(API_URL, {
+                                        method: "POST",
+                                        mode: "no-cors",
+                                        headers: {
+                                            "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({ scoreConfig }),
+                                    });
+                                    alert("Đã lưu cấu hình");
+                                }}
+                            >
+                                Lưu cấu hình
+                            </button>
+                        </div>
+
+                        <div
+                            style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}
+                        >
+                            * Hàng cuối nên là giá trị lớn để bao quát mọi
+                            trường hợp
+                        </div>
+                    </section>
+                )} */}
+                {activeTab === "config" && (
+                    <section className="section">
+                        <h2 className="section-title">Cấu hình tính điểm</h2>
+
+                        {/* WRAPPER CHỐNG TRÀN */}
+                        <div style={{ width: "100%", overflowX: "auto" }}>
+                            <table
+                                style={{
+                                    width: "100%",
+                                    borderCollapse: "collapse",
+                                    tableLayout: "fixed",
+                                }}
+                            >
+                                <thead>
+                                    <tr>
+                                        <th
+                                            style={{
+                                                textAlign: "left",
+                                                width: "45%",
+                                            }}
+                                        >
+                                            Chênh lệch tối đa
+                                        </th>
+                                        <th
+                                            style={{
+                                                textAlign: "left",
+                                                width: "45%",
+                                            }}
+                                        >
+                                            Hệ số chia
+                                        </th>
+                                        <th style={{ width: 40 }} />
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {scoreConfig.map((row, idx) => (
+                                        <tr key={idx}>
+                                            <td>
+                                                <input
+                                                    type="number"
+                                                    className="input-field"
+                                                    style={{ width: "100%" }}
+                                                    value={row.maxPointDiff}
+                                                    onChange={(e) => {
+                                                        const v = [
+                                                            ...scoreConfig,
+                                                        ];
+                                                        v[idx].maxPointDiff =
+                                                            Number(
+                                                                e.target.value
+                                                            );
+                                                        setScoreConfig(v);
+                                                    }}
+                                                />
+                                            </td>
+
+                                            <td>
+                                                <input
+                                                    type="number"
+                                                    className="input-field"
+                                                    style={{ width: "100%" }}
+                                                    value={row.divisor}
+                                                    onChange={(e) => {
+                                                        const v = [
+                                                            ...scoreConfig,
+                                                        ];
+                                                        v[idx].divisor = Number(
+                                                            e.target.value
+                                                        );
+                                                        setScoreConfig(v);
+                                                    }}
+                                                />
+                                            </td>
+
+                                            <td style={{ textAlign: "center" }}>
+                                                <button
+                                                    className="btn-delete"
+                                                    style={{
+                                                        minWidth: 28,
+                                                        padding: "4px 6px",
+                                                    }}
+                                                    onClick={() => {
+                                                        setScoreConfig(
+                                                            scoreConfig.filter(
+                                                                (_, i) =>
+                                                                    i !== idx
+                                                            )
+                                                        );
+                                                    }}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* ACTIONS */}
+                        <div
+                            style={{
+                                marginTop: 12,
+                                display: "flex",
+                                gap: 10,
+                                flexWrap: "wrap",
+                            }}
+                        >
+                            <button
+                                className="btn"
+                                onClick={() =>
+                                    setScoreConfig([
+                                        ...scoreConfig,
+                                        { maxPointDiff: 0, divisor: 1 },
+                                    ])
+                                }
+                            >
+                                + Thêm dòng
+                            </button>
+
+                            <button
+                                className="btn btn-primary"
+                                onClick={async () => {
+                                    await fetch(API_URL, {
+                                        method: "POST",
+                                        mode: "no-cors",
+                                        headers: {
+                                            "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({ scoreConfig }),
+                                    });
+                                    alert("Đã lưu cấu hình");
+                                }}
+                            >
+                                Lưu cấu hình
+                            </button>
+                        </div>
+
+                        <div
+                            style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}
+                        >
+                            * Hàng cuối nên là giá trị lớn để bao quát mọi
+                            trường hợp
+                        </div>
+                    </section>
+                )}
+
+                {/* Các tab khác giữ nguyên UI như cũ */}
+                {/* (Không cắt bớt để tránh phá layout của bạn) */}
             </main>
         </div>
     );
