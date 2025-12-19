@@ -68,7 +68,7 @@ Live demo (Vercel): [Link](https://badminton-league-tracker.vercel.app/)
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/<your-username>/BadmintonLeagueTracker.git
+git clone https://github.com/mhung2026/BadmintonLeagueTracker.git
 cd BadmintonLeagueTracker
 ```
 ### 2. Install dependencies
