@@ -120,6 +120,15 @@ function App() {
     };
 
     const deletePlayer = (id) => {
+        const hasHistory = matches.some(
+            (m) => m.team1.includes(id) || m.team2.includes(id)
+        );
+
+        if (hasHistory) {
+            alert("Không thể xóa người chơi đã có lịch sử thi đấu.");
+            return;
+        }
+
         setPlayers(players.filter((p) => p.id !== id));
     };
 
