@@ -85,6 +85,7 @@ Open in browser: http://localhost:5173
  - Create a new Google Apps Script project
  - Deploy as Web App
  - Access level: Anyone
+ - Example code: [Link](https://github.com/mhung2026/BadmintonLeagueTracker/blob/main/AppscriptCode.gs)
 ### 2. Configure API URL
 In src/App.jsx: 
 ```bash
