@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import "./App.css";
 
 const API_URL =
-    "https://script.google.com/macros/s/AKfycbwW0ohBk_2802soszIdprc01ohAeqlpAxOpH1yHclMMM5m38JRp75xFsLPHb9RtWIhLHg/exec";
+    "https://script.google.com/macros/s/AKfycbyDSW4ZAkBVROvWbA_j82ugaVPotGz4kBjOfriEIK7p6olAO5lKJsSEe0hoPfEwcFc2rA/exec";
 
 function App() {
     const [isLoaded, setIsLoaded] = useState(false);
