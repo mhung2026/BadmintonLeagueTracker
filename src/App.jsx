@@ -303,9 +303,8 @@ function App() {
                 ].map(([key, label]) => (
                     <button
                         key={key}
-                        className={`nav-btn ${
-                            activeTab === key ? "active" : ""
-                        }`}
+                        className={`nav-btn ${activeTab === key ? "active" : ""
+                            }`}
                         onClick={() => setActiveTab(key)}
                     >
                         {label}
@@ -340,7 +339,7 @@ function App() {
                         <h2 className="section-title">Tạo Trận Đấu</h2>
 
                         {/* Chọn loại trận: đơn hoặc đôi */}
-                        <div className="match-type-group">
+                        <div className="match-type-group" style={{ display: 'flex', justifyContent: 'center', gap: 24 }}>
                             <label className="radio-label">
                                 <input
                                     type="radio"
@@ -506,10 +505,12 @@ function App() {
                                     type="number"
                                     className="input-field"
                                     placeholder="Điểm đội 1"
+                                    min={0}
                                     value={scoreTeam1}
-                                    onChange={(e) =>
-                                        setScoreTeam1(e.target.value)
-                                    }
+                                    onChange={(e) => {
+                                        const v = Math.max(0, Number(e.target.value));
+                                        setScoreTeam1(v === 0 && e.target.value === "" ? "" : v);
+                                    }}
                                     style={{ flex: 1, minWidth: 0 }}
                                 />
 
@@ -523,10 +524,12 @@ function App() {
                                     type="number"
                                     className="input-field"
                                     placeholder="Điểm đội 2"
+                                    min={0}
                                     value={scoreTeam2}
-                                    onChange={(e) =>
-                                        setScoreTeam2(e.target.value)
-                                    }
+                                    onChange={(e) => {
+                                        const v = Math.max(0, Number(e.target.value));
+                                        setScoreTeam2(v === 0 && e.target.value === "" ? "" : v);
+                                    }}
                                     style={{ flex: 1, minWidth: 0 }}
                                 />
                             </div>
@@ -656,17 +659,16 @@ function App() {
                                                 }}
                                             >
                                                 {match.score1 != null &&
-                                                match.score2 != null
+                                                    match.score2 != null
                                                     ? `${match.score1} - ${match.score2}`
                                                     : ""}
                                             </div>
                                             <div className="history-teams">
                                                 <div
-                                                    className={`history-team ${
-                                                        match.winner === 1
+                                                    className={`history-team ${match.winner === 1
                                                             ? "winner"
                                                             : ""
-                                                    }`}
+                                                        }`}
                                                 >
                                                     {match.team1
                                                         .map((id) =>
@@ -676,11 +678,10 @@ function App() {
                                                 </div>
                                                 <span className="vs">vs</span>
                                                 <div
-                                                    className={`history-team ${
-                                                        match.winner === 2
+                                                    className={`history-team ${match.winner === 2
                                                             ? "winner"
                                                             : ""
-                                                    }`}
+                                                        }`}
                                                 >
                                                     {match.team2
                                                         .map((id) =>
@@ -695,121 +696,7 @@ function App() {
                         )}
                     </section>
                 )}
-                {/* Tab Cấu hình */}
-                {/* {activeTab === "config" && (
-                    <section className="section">
-                        <h2 className="section-title">Cấu hình tính điểm</h2>
-
-                        <table
-                            style={{
-                                width: "100%",
-                                borderCollapse: "collapse",
-                            }}
-                        >
-                            <thead>
-                                <tr>
-                                    <th style={{ textAlign: "left" }}>
-                                        Chênh lệch tối đa
-                                    </th>
-                                    <th style={{ textAlign: "left" }}>
-                                        Hệ số chia
-                                    </th>
-                                    <th />
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                                {scoreConfig.map((row, idx) => (
-                                    <tr key={idx}>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                className="input-field"
-                                                value={row.maxPointDiff}
-                                                onChange={(e) => {
-                                                    const v = [...scoreConfig];
-                                                    v[idx].maxPointDiff =
-                                                        Number(e.target.value);
-                                                    setScoreConfig(v);
-                                                }}
-                                            />
-                                        </td>
-
-                                        <td>
-                                            <input
-                                                type="number"
-                                                className="input-field"
-                                                value={row.divisor}
-                                                onChange={(e) => {
-                                                    const v = [...scoreConfig];
-                                                    v[idx].divisor = Number(
-                                                        e.target.value
-                                                    );
-                                                    setScoreConfig(v);
-                                                }}
-                                            />
-                                        </td>
-
-                                        <td>
-                                            <button
-                                                className="btn-delete"
-                                                onClick={() => {
-                                                    const v =
-                                                        scoreConfig.filter(
-                                                            (_, i) => i !== idx
-                                                        );
-                                                    setScoreConfig(v);
-                                                }}
-                                            >
-                                                Xoá
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-
-                        <div
-                            style={{ marginTop: 12, display: "flex", gap: 10 }}
-                        >
-                            <button
-                                className="btn"
-                                onClick={() =>
-                                    setScoreConfig([
-                                        ...scoreConfig,
-                                        { maxPointDiff: 0, divisor: 1 },
-                                    ])
-                                }
-                            >
-                                + Thêm dòng
-                            </button>
-
-                            <button
-                                className="btn btn-primary"
-                                onClick={async () => {
-                                    await fetch(API_URL, {
-                                        method: "POST",
-                                        mode: "no-cors",
-                                        headers: {
-                                            "Content-Type": "application/json",
-                                        },
-                                        body: JSON.stringify({ scoreConfig }),
-                                    });
-                                    alert("Đã lưu cấu hình");
-                                }}
-                            >
-                                Lưu cấu hình
-                            </button>
-                        </div>
-
-                        <div
-                            style={{ marginTop: 8, fontSize: 12, opacity: 0.7 }}
-                        >
-                            * Hàng cuối nên là giá trị lớn để bao quát mọi
-                            trường hợp
-                        </div>
-                    </section>
-                )} */}
+                {/* Tab Cấu Hình Tính Điểm */}
                 {activeTab === "config" && (
                     <section className="section">
                         <h2 className="section-title">Cấu hình tính điểm</h2>
@@ -829,6 +716,7 @@ function App() {
                                             style={{
                                                 textAlign: "left",
                                                 width: "45%",
+                                                paddingRight: 16,
                                             }}
                                         >
                                             Chênh lệch tối đa
@@ -837,6 +725,7 @@ function App() {
                                             style={{
                                                 textAlign: "left",
                                                 width: "45%",
+                                                paddingLeft: 16,
                                             }}
                                         >
                                             Hệ số chia
@@ -848,38 +737,37 @@ function App() {
                                 <tbody>
                                     {scoreConfig.map((row, idx) => (
                                         <tr key={idx}>
-                                            <td>
+                                            <td style={{ paddingRight: 4, paddingBottom: 3 }}>
                                                 <input
                                                     type="number"
                                                     className="input-field"
                                                     style={{ width: "100%" }}
+                                                    min={0}
                                                     value={row.maxPointDiff}
                                                     onChange={(e) => {
                                                         const v = [
                                                             ...scoreConfig,
                                                         ];
-                                                        v[idx].maxPointDiff =
-                                                            Number(
-                                                                e.target.value
-                                                            );
+                                                        const val = Math.max(0, Number(e.target.value));
+                                                        v[idx].maxPointDiff = val === 0 && e.target.value === "" ? "" : val;
                                                         setScoreConfig(v);
                                                     }}
                                                 />
-                                            </td>
+                                            </td>   
 
-                                            <td>
+                                            <td style={{ paddingLeft: 4, paddingBottom: 3}}>
                                                 <input
                                                     type="number"
                                                     className="input-field"
                                                     style={{ width: "100%" }}
+                                                    min={0}
                                                     value={row.divisor}
                                                     onChange={(e) => {
                                                         const v = [
                                                             ...scoreConfig,
                                                         ];
-                                                        v[idx].divisor = Number(
-                                                            e.target.value
-                                                        );
+                                                        const val = Math.max(0, Number(e.target.value));
+                                                        v[idx].divisor = val === 0 && e.target.value === "" ? "" : val;
                                                         setScoreConfig(v);
                                                     }}
                                                 />
@@ -901,7 +789,7 @@ function App() {
                                                         );
                                                     }}
                                                 >
-                                                    ✕
+                                                    Xóa
                                                 </button>
                                             </td>
                                         </tr>
