@@ -7,10 +7,15 @@ Designed with real tournament logic in mind: once a match is recorded, its score
 ## 🎯 Use Cases##
 
  - Office badminton groups
-
  - Badminton clubs
-
  - Small internal tournaments
+## 💡 Why This Project?
+
+This project was built to explore:
+- Tournament-grade scoring logic
+- Immutable match history design
+- Serverless architectures using Google Apps Script
+- Real-time shared state without a traditional backend
 
 ## ✨ Key Features
 ### 👥 Player Management
@@ -24,7 +29,7 @@ Designed with real tournament logic in mind: once a match is recorded, its score
 - Enter actual match scores
 - Winner is calculated automatically
 - Each match locks its scoring snapshot at creation time
-### 🏆 Leaderboard (Tournament-Grade Logic)##
+### 🏆 Leaderboard (Tournament-Grade Logic)
  - Rankings are calculated from match history
  - Each match stores a scoring snapshot, including:
    - Team points before the match
@@ -95,20 +100,19 @@ http://localhost:5173
 #### 2. Configure API URL
 
 - In src/App.jsx:
-```base
-const API_URL = "https://script.google.com/macros/s/XXXX/exec
-";
+```js
+const API_URL = "https://script.google.com/macros/s/XXXX/exec";
 ```
 ## 📄 Data Structure
-Player
-```base
+**Player**
+```json
 {
   "id": "uuid-string",
   "name": "Hung"
 }
 ```
-Match
-```base
+**Match**
+```json
 {
   "id": "uuid-string",
   "type": "singles | doubles",
@@ -131,7 +135,15 @@ Match
 ## 🕒 Timezone Handling
 - Stored in Google Sheets: ISO 8601 (UTC)
 - Displayed in UI using:
-```base
+```js
 new Date(date).toLocaleString()
 ```
-## 👤 Author:  mhung2026
+## ⚠️ Limitations
+- No authentication (anyone can modify data)
+- Google Sheets is not optimized for high concurrency
+- Not suitable for large-scale tournaments
+
+## 👤 Author
+**mhung2026**  
+GitHub: https://github.com/mhung2026
+
