@@ -4,7 +4,7 @@ A mobile-first badminton league management web app that allows multiple users to
 
 Designed with real tournament logic in mind: once a match is recorded, its score is locked and never recalculated, even if scoring rules change later.
 
-## 🎯 Use Cases##
+## 🎯 Use Cases
 
  - Office badminton groups
  - Badminton clubs
