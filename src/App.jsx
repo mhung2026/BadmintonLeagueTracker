@@ -574,7 +574,7 @@ function App() {
     return (
         <div className="app-container">
             <header className="app-header">
-                <h1 className="header-title">BADMINTON LEGEND ALLIANCE</h1>
+                <h1 className="header-title">BADMINTON LEGEND ALLIANCEITSC</h1>
             </header>
 
             {/* ---- NAV ---- */}
