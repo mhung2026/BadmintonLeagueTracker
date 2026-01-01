@@ -1,114 +1,71 @@
+
 # 🏸 Badminton League Tracker – Legend Alliance
 
-A mobile-first badminton league management web app that allows multiple users to create matches, track rankings, and share data in real time using Google Sheets as a serverless backend.
+**Badminton League Tracker** là ứng dụng web quản lý giải cầu lông, ưu tiên trải nghiệm di động, cho phép nhiều người dùng tạo trận đấu, theo dõi bảng xếp hạng, và chia sẻ dữ liệu thời gian thực qua Google Sheets (serverless backend).
 
-Designed with real tournament logic in mind: once a match is recorded, its score is locked and never recalculated, even if scoring rules change later.
+## 🎯 Tính Năng Nổi Bật
 
-## 🎯 Use Cases
+- **Quản lý người chơi:** Thêm/xóa người chơi (không xóa được nếu đã có lịch sử thi đấu), danh sách dùng chung cho mọi người.
+- **Tạo trận đấu:** Hỗ trợ trận đơn (1 vs 1) và đôi (2 vs 2), nhập điểm thực tế, tự động xác định đội thắng, mỗi trận lưu snapshot điểm số tại thời điểm tạo.
+- **Bảng xếp hạng:** Tính toán từ lịch sử trận đấu, mỗi trận lưu lại thông tin snapshot (điểm trước trận, chênh lệch, hệ số chia, delta điểm), thay đổi quy tắc không ảnh hưởng trận cũ. **Điểm cộng cho đội thắng dựa trên chênh lệch tổng điểm thành viên hai đội trước trận, không dựa vào kết quả trận đấu.**
+- **Lịch sử trận đấu:** Lưu loại trận, thành viên, điểm số, đội thắng, thời gian (UTC, hiển thị theo múi giờ máy người dùng).
+- **Cấu hình tính điểm:** Tùy chỉnh quy tắc chia điểm (max chênh lệch, divisor), chỉ áp dụng cho trận mới.
+- **Chia sẻ dữ liệu:** Không dùng localStorage, mọi dữ liệu lưu trên Google Sheets, mọi người cùng xem/chỉnh sửa, không cần backend truyền thống.
 
- - Office badminton groups
- - Badminton clubs
- - Small internal tournaments
-## 💡 Why This Project?
+## 🛠 Công Nghệ Sử Dụng
 
-This project was built to explore:
-- Tournament-grade scoring logic
-- Immutable match history design
-- Serverless architectures using Google Apps Script
-- Real-time shared state without a traditional backend
+- **Frontend:** React + Vite (UI hiện đại, mobile-first, responsive)
+- **Backend:** Google Apps Script (API serverless)
+- **Database:** Google Sheets
+- **Triển khai:** Vercel
 
-## ✨ Key Features
-### 👥 Player Management
- - Add new players
- - ❌ Players with match history cannot be deleted
- - Shared player list across all users
-### 🏸 Match Creation
-- Supports:
-   - Singles (1 vs 1)
-   - Doubles (2 vs 2)
-- Enter actual match scores
-- Winner is calculated automatically
-- Each match locks its scoring snapshot at creation time
-### 🏆 Leaderboard (Tournament-Grade Logic)
- - Rankings are calculated from match history
- - Each match stores a scoring snapshot, including:
-   - Team points before the match
-   - Rating difference
-   - Divisor used
-   - Final point delta
-- Changing scoring rules does NOT affect past matches
-- Displays:
-  - Total points
-  - Total matches
-  - Wins
-### 📜 Match History
-- Stores:
-  - Match type (Singles / Doubles)
-  - Players in each team
-  - Final score
-  - Winner
-  - Match time
-- Match time is stored in UTC and displayed in the user’s local timezone
-### ⚙️ Scoring Configuration
-- Configure point calculation rules using:
-  - Maximum rating difference
-  - Divisor
-- Rules apply only to new matches
-- Old matches remain unchanged
-## 🌍 Data Storage & Sharing
-- ❌ No localStorage
-- ✅ Data stored in Google Sheets
-- ✅ All users see the same shared data
-- ✅ No traditional backend server required
-## 🛠 Tech Stack
-- React + Vite
-- Google Apps Script (serverless backend)
-- Google Sheets (database)
-- Vercel (deployment)
-## 🚀 Live Demo
-```base
+## 🌈 Thiết Kế UI/UX
+
+- Layout mobile-first, max-width 960px, căn giữa, màu sắc tươi sáng, accent xanh dương (#2563eb).
+- Các màn hình: Header, Navigation Tabs, Xếp Hạng, Người Chơi, Tạo Trận Đấu, Lịch Sử, Cấu Hình.
+- Xem chi tiết tại [UI_DESIGN.md](UI_DESIGN.md).
+
+## 🚀 Demo
+
 https://badminton-league-tracker.vercel.app/
-```
-## ⚙️ Local Development Setup
-#### 1. Clone the repository
-```base
-git clone https://github.com/mhung2026/BadmintonLeagueTracker.git
 
-cd BadmintonLeagueTracker
-```
-#### 2. Install dependencies
-```base
-npm install
-```
-#### 3. Run locally
-```base
-npm run dev
-```
-Open in browser:
-http://localhost:5173
+## ⚙️ Hướng Dẫn Cài Đặt & Phát Triển
 
-## 🔌 Google Sheets Integration
-#### 1. Create Google Apps Script
-   - Create a new Google Apps Script project
-   - Paste the backend code
-   - Deploy as Web App
-   - Set access:
-   - Who has access: Anyone
-   - Execute as: Me
-   - Backend example: [Link](https://github.com/mhung2026/BadmintonLeagueTracker/blob/main/AppscriptCode.gs)
+1. **Clone repo:**
+   ```sh
+   git clone https://github.com/mhung2026/BadmintonLeagueTracker.git
+   cd BadmintonLeagueTracker
+   ```
+2. **Cài đặt dependencies:**
+   ```sh
+   npm install
+   ```
+3. **Chạy local:**
+   ```sh
+   npm run dev
+   ```
+   Truy cập: http://localhost:5173
 
-#### 2. Configure API URL
+### 🔌 Kết nối Google Sheets
 
-- In src/App.jsx:
-```js
-const API_URL = "https://script.google.com/macros/s/XXXX/exec";
-```
-## 📄 Data Structure
+1. **Tạo Google Apps Script:**
+   - Tạo project mới, dán code trong [AppscriptCode.gs](AppscriptCode.gs).
+   - Deploy as Web App:
+     - Execute as: Me
+     - Who has access: Anyone
+2. **Cấu hình API URL:**
+   - Trong `src/App.jsx`, sửa biến:
+     ```js
+     const API_URL = "https://script.google.com/macros/s/XXXX/exec";
+     ```
+
+## 📄 Cấu Trúc Dữ Liệu
+
 **Player**
 ```json
 {
   "id": "uuid-string",
-  "name": "Hung"
+  "name": "Tên người chơi"
 }
 ```
 **Match**
@@ -127,23 +84,54 @@ const API_URL = "https://script.google.com/macros/s/XXXX/exec";
     "team2PtsBefore": 8,
     "ratingDiff": 4,
     "divisorUsed": 2,
-    "scoreDiff": 6,
-    "pointDelta": 3
+    // "scoreDiff": 6, // (không còn dùng)
+    "pointDelta": 3 // Số điểm cộng cho đội thắng, tính bằng: Math.max(1, Math.round(Math.abs(team1PtsBefore - team2PtsBefore) / divisorUsed))
   }
 }
 ```
-## 🕒 Timezone Handling
-- Stored in Google Sheets: ISO 8601 (UTC)
-- Displayed in UI using:
-```js
-new Date(date).toLocaleString()
+
+## 🕒 Xử Lý Thời Gian
+
+- Lưu trên Google Sheets: ISO 8601 (UTC)
+- Hiển thị UI: `new Date(date).toLocaleString()`
+
+## ⚠️ Giới Hạn
+
+- Không có xác thực (ai cũng sửa được)
+- Google Sheets không tối ưu cho concurrency cao
+- Không phù hợp cho giải đấu quy mô lớn
+
+
+## 📁 Cấu Trúc Thư Mục
+
 ```
-## ⚠️ Limitations
-- No authentication (anyone can modify data)
-- Google Sheets is not optimized for high concurrency
-- Not suitable for large-scale tournaments
+AppscriptCode.gs         # Backend Google Apps Script (cũ)
+README.md
+UI_DESIGN.md             # Thiết kế UI/UX chi tiết
+SECURITY.md
+docs/
+  SRS.md                 # Yêu cầu phần mềm
+  SUPABASE_GUIDE.md      # Hướng dẫn cấu hình Supabase
+public/                  # Static assets
+src/
+  App.jsx                # React main app
+  App.css                # CSS chính
+  main.jsx               # Entry point
+  supabaseClient.js      # Kết nối Supabase
+  assets/                # Hình ảnh, icon
+```
 
-## 👤 Author
-**mhung2026**  
-GitHub: https://github.com/mhung2026
+## 🔗 Hướng dẫn sử dụng Supabase
 
+Xem chi tiết tại [docs/SUPABASE_GUIDE.md](docs/SUPABASE_GUIDE.md)
+
+## 👤 Tác Giả
+
+- **mhung2026**  
+- GitHub: https://github.com/mhung2026
+
+
+Bạn có thể dùng bản README này để thay thế hoặc bổ sung cho tài liệu hiện tại. Nếu cần bản tiếng Anh hoặc muốn bổ sung phần nào, hãy yêu cầu!
+    "team1PtsBefore": 12,
+
+    "team2PtsBefore": 8,

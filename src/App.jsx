@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
-import "./App.css";
 
-const API_URL =
-    "https://script.google.com/macros/s/AKfycbyDSW4ZAkBVROvWbA_j82ugaVPotGz4kBjOfriEIK7p6olAO5lKJsSEe0hoPfEwcFc2rA/exec";
+import { useState, useEffect, useCallback } from "react";
+import "./App.css";
+import { supabase } from "./supabaseClient";
 
 function App() {
     const [isLoaded, setIsLoaded] = useState(false);
@@ -13,7 +12,20 @@ function App() {
 
     const [newPlayerName, setNewPlayerName] = useState("");
     const [activeTab, setActiveTab] = useState("ranking");
-    const [matchType, setMatchType] = useState("singles");
+    const [matchType, setMatchType] = useState("doubles");
+    const [historyFilter, setHistoryFilter] = useState("all");
+    const [historyPlayerFilter, setHistoryPlayerFilter] = useState("all");
+    const [editingPlayerId, setEditingPlayerId] = useState(null);
+    const [editingPlayerName, setEditingPlayerName] = useState("");
+    const [editingMatchId, setEditingMatchId] = useState(null);
+    const [editingMatchScore1, setEditingMatchScore1] = useState("");
+    const [editingMatchScore2, setEditingMatchScore2] = useState("");
+    const [editingMatchTeam1, setEditingMatchTeam1] = useState([]);
+    const [editingMatchTeam2, setEditingMatchTeam2] = useState([]);
+    const [editingMatchType, setEditingMatchType] = useState("doubles");
+    const [isUpdatingMatches, setIsUpdatingMatches] = useState(false);
+    const [historyStartDate, setHistoryStartDate] = useState("");
+    const [historyEndDate, setHistoryEndDate] = useState("");
 
     const [team1, setTeam1] = useState({ players: [] });
     const [team2, setTeam2] = useState({ players: [] });
@@ -30,19 +42,33 @@ function App() {
 
     const formatDateLocal = (isoString) => {
         const d = new Date(isoString);
-        return d.toLocaleString("vi-VN", {
-            hour12: false,
-            dateStyle: "short",
-            timeStyle: "short",
-        });
+        if (Number.isNaN(d.getTime())) return "--:-- --/--/----";
+        const pad = (val) => String(val).padStart(2, "0");
+        const hours = pad(d.getHours());
+        const minutes = pad(d.getMinutes());
+        const day = pad(d.getDate());
+        const month = pad(d.getMonth() + 1);
+        const year = d.getFullYear();
+        return `${hours}:${minutes} ${day}/${month}/${year}`;
     };
 
     const getDivisorByPointDiff = (diff) => {
         if (!scoreConfig.length) return 2;
-        return (
-            scoreConfig.find((c) => diff <= c.maxPointDiff)?.divisor ??
-            scoreConfig[scoreConfig.length - 1].divisor
+
+        const sorted = [...scoreConfig].sort(
+            (a, b) => (a.maxPointDiff ?? 0) - (b.maxPointDiff ?? 0)
         );
+
+        let divisor = sorted[0]?.divisor ?? 2;
+        for (const rule of sorted) {
+            if (diff >= (rule.maxPointDiff ?? 0)) {
+                divisor = rule.divisor;
+            } else {
+                break;
+            }
+        }
+
+        return divisor ?? 2;
     };
 
     const getTeamPoints = (teamPlayers, rankingMap) => {
@@ -51,85 +77,126 @@ function App() {
         }, 0);
     };
 
+    const fetchPlayers = useCallback(async () => {
+        const { data, error } = await supabase.from("players").select("*");
+        if (error) {
+            console.error("Không thể tải danh sách người chơi", error);
+            return [];
+        }
+        setPlayers(data || []);
+        return data || [];
+    }, []);
+
+    const fetchMatches = useCallback(async () => {
+        const { data, error } = await supabase.from("matches").select("*");
+        if (error) {
+            console.error("Không thể tải lịch sử trận đấu", error);
+            return [];
+        }
+        setMatches(data || []);
+        return data || [];
+    }, []);
+
+    const fetchScoreConfig = useCallback(async () => {
+        const { data, error } = await supabase.from("scoreconfig").select("*");
+        if (error) {
+            console.error("Không thể tải cấu hình điểm", error);
+            return [];
+        }
+        setScoreConfig(data || []);
+        return data || [];
+    }, []);
+
     /* =======================
        LOAD DATA
     ======================= */
 
     useEffect(() => {
         const loadData = async () => {
-            const res = await fetch(API_URL);
-            const data = await res.json();
-
-            setScoreConfig(data.scoreConfig || []);
-
-            const fixedPlayers = (data.players || []).map((p) => ({
-                id: p.id ?? crypto.randomUUID(),
-                name: p.name,
-            }));
-
-            const fixedMatches = (data.matches || []).filter(
-                (m) =>
-                    m.team1 &&
-                    m.team2 &&
-                    (m.winner || (m.score1 != null && m.score2 != null))
-            );
-
-            setPlayers(fixedPlayers);
-            setMatches(fixedMatches);
-            setIsLoaded(true);
+            try {
+                await Promise.all([
+                    fetchPlayers(),
+                    fetchMatches(),
+                    fetchScoreConfig(),
+                ]);
+            } finally {
+                setIsLoaded(true);
+            }
         };
-
         loadData();
-    }, []);
+    }, [fetchPlayers, fetchMatches, fetchScoreConfig]);
 
     /* =======================
        AUTO SAVE (FULL PAYLOAD)
     ======================= */
 
     useEffect(() => {
-        if (!isLoaded) return;
-
-        const timeout = setTimeout(() => {
-            fetch(API_URL, {
-                method: "POST",
-                mode: "no-cors",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    players,
-                    matches,
-                    scoreConfig,
-                }),
-            });
-        }, 800);
-
-        return () => clearTimeout(timeout);
-    }, [players, matches, scoreConfig, isLoaded]);
+        // Không autosave toàn bộ payload như Google Sheets nữa
+        // Mỗi thao tác sẽ gọi Supabase CRUD riêng
+    }, []);
 
     /* =======================
        PLAYERS
     ======================= */
 
-    const addPlayer = () => {
+    const addPlayer = async () => {
         if (!newPlayerName.trim()) return;
+        const newPlayer = { name: newPlayerName.trim() };
 
-        setPlayers([
-            ...players,
-            { id: crypto.randomUUID(), name: newPlayerName.trim() },
-        ]);
+        const { error } = await supabase.from("players").insert([newPlayer]);
+        if (error) {
+            alert("Không thể thêm người chơi mới. Vui lòng thử lại.");
+            return;
+        }
+
         setNewPlayerName("");
+        fetchPlayers();
     };
 
     const deletePlayer = (id) => {
         const hasHistory = matches.some(
             (m) => m.team1.includes(id) || m.team2.includes(id)
         );
-
         if (hasHistory) {
             alert("Không thể xóa người chơi đã có lịch sử thi đấu.");
             return;
         }
+        supabase.from("players").delete().eq("id", id).then(() => {
+            setPlayers(players.filter((p) => p.id !== id));
+        });
+    };
 
-        setPlayers(players.filter((p) => p.id !== id));
+    const startEditingPlayer = (player) => {
+        setEditingPlayerId(player.id);
+        setEditingPlayerName(player.name);
+    };
+
+    const cancelEditingPlayer = () => {
+        setEditingPlayerId(null);
+        setEditingPlayerName("");
+    };
+
+    const savePlayerName = async () => {
+        if (!editingPlayerId || !editingPlayerName.trim()) return;
+        const trimmed = editingPlayerName.trim();
+        const { error } = await supabase
+            .from("players")
+            .update({ name: trimmed })
+            .eq("id", editingPlayerId);
+
+        if (error) {
+            alert("Không thể cập nhật tên. Vui lòng thử lại.");
+            return;
+        }
+
+        setPlayers((prev) =>
+            prev.map((player) =>
+                player.id === editingPlayerId
+                    ? { ...player, name: trimmed }
+                    : player
+            )
+        );
+        cancelEditingPlayer();
     };
 
     /* =======================
@@ -165,7 +232,7 @@ function App() {
        CREATE MATCH
     ======================= */
 
-    const createMatch = () => {
+    const createMatch = async () => {
         const isValidSingles =
             matchType === "singles" &&
             team1.players.length === 1 &&
@@ -201,38 +268,45 @@ function App() {
         const ratingDiff = Math.abs(team1PtsBefore - team2PtsBefore);
         const scoreDiff = Math.abs(s1 - s2);
 
-        const divisorUsed = getDivisorByPointDiff(ratingDiff);
-        const pointDelta = Math.max(1, Math.round(scoreDiff / divisorUsed));
+        const divisorUsed = getDivisorByPointDiff(scoreDiff);
+        const pointDelta = Math.max(1, Math.round(scoreDiff / Math.max(divisorUsed, 1)));
 
-        setMatches([
-            ...matches,
-            {
-                id: crypto.randomUUID(),
-                type: matchType,
-                team1: team1.players,
-                team2: team2.players,
-                score1: s1,
-                score2: s2,
-                winner: s1 > s2 ? 1 : 2,
-                date: new Date().toISOString(),
-                meta: {
-                    team1PtsBefore,
-                    team2PtsBefore,
-                    ratingDiff,
-                    divisorUsed,
-                    scoreDiff,
-                    pointDelta,
-                },
+        const newMatch = {
+            type: matchType,
+            team1: team1.players,
+            team2: team2.players,
+            score1: s1,
+            score2: s2,
+            winner: s1 > s2 ? 1 : 2,
+            date: new Date().toISOString(),
+            meta: {
+                team1PtsBefore,
+                team2PtsBefore,
+                ratingDiff,
+                scoreDiff,
+                divisorUsed,
+                pointDelta,
             },
-        ]);
+        };
+        try {
+            const { error } = await supabase
+                .from("matches")
+                .insert([newMatch]);
+            if (error) throw error;
 
-        setTeam1({ players: [] });
-        setTeam2({ players: [] });
-        setMatchType("singles");
-        setScoreTeam1("");
-        setScoreTeam2("");
+            await fetchMatches();
 
-        alert("Trận đấu đã được lưu (đã chốt điểm)");
+            setTeam1({ players: [] });
+            setTeam2({ players: [] });
+            setMatchType("doubles");
+            setScoreTeam1("");
+            setScoreTeam2("");
+
+            alert("Trận đấu đã được lưu (đã chốt điểm)");
+        } catch (err) {
+            console.error("Không thể lưu trận đấu", err);
+            alert("Không thể lưu trận đấu. Vui lòng thử lại.");
+        }
     };
 
     /* =======================
@@ -254,7 +328,6 @@ function App() {
         const sortedMatches = [...matches].sort(
             (a, b) => new Date(a.date) - new Date(b.date)
         );
-
         sortedMatches.forEach((match) => {
             if (!match.meta?.pointDelta) return;
 
@@ -263,16 +336,24 @@ function App() {
             const loserTeam = winnerTeam === 1 ? 2 : 1;
 
             match[`team${winnerTeam}`].forEach((pid) => {
+                if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
                 ranking[pid].points += delta;
                 ranking[pid].wins += 1;
             });
 
             match[`team${loserTeam}`].forEach((pid) => {
+                if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
                 ranking[pid].points -= delta;
             });
 
-            match.team1.forEach((pid) => ranking[pid].totalMatches++);
-            match.team2.forEach((pid) => ranking[pid].totalMatches++);
+            match.team1.forEach((pid) => {
+                if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
+                ranking[pid].totalMatches++;
+            });
+            match.team2.forEach((pid) => {
+                if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
+                ranking[pid].totalMatches++;
+            });
         });
 
         if (forSnapshot) return ranking;
@@ -280,7 +361,203 @@ function App() {
         return Object.values(ranking).sort((a, b) => b.points - a.points);
     };
 
+    /* =======================
+       MATCH HISTORY EDITING
+    ======================= */
+
+    const startEditingMatch = (match) => {
+        setEditingMatchId(match.id);
+        setEditingMatchScore1(
+            match.score1 === null || match.score1 === undefined
+                ? ""
+                : String(match.score1)
+        );
+        setEditingMatchScore2(
+            match.score2 === null || match.score2 === undefined
+                ? ""
+                : String(match.score2)
+        );
+        setEditingMatchTeam1([...(match.team1 || [])]);
+        setEditingMatchTeam2([...(match.team2 || [])]);
+        setEditingMatchType(match.type || "doubles");
+    };
+
+    const cancelEditingMatch = () => {
+        setEditingMatchId(null);
+        setEditingMatchScore1("");
+        setEditingMatchScore2("");
+        setEditingMatchTeam1([]);
+        setEditingMatchTeam2([]);
+        setEditingMatchType("doubles");
+    };
+
+    const recomputeMatchesWithMeta = (matchesInput) => {
+        const rankingMap = {};
+        players.forEach((p) => {
+            rankingMap[p.id] = { points: 0 };
+        });
+
+        const sorted = [...matchesInput].sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+        );
+
+        const updatedSorted = sorted.map((match) => {
+            const score1 = Number(match.score1);
+            const score2 = Number(match.score2);
+
+            if (
+                !Number.isFinite(score1) ||
+                !Number.isFinite(score2) ||
+                score1 === score2
+            ) {
+                return { ...match };
+            }
+
+            const team1PtsBefore = getTeamPoints(match.team1, rankingMap);
+            const team2PtsBefore = getTeamPoints(match.team2, rankingMap);
+            const ratingDiff = Math.abs(team1PtsBefore - team2PtsBefore);
+            const scoreDiff = Math.abs(score1 - score2);
+            const divisorUsed = getDivisorByPointDiff(scoreDiff);
+            const pointDelta = Math.max(
+                1,
+                Math.round(scoreDiff / Math.max(divisorUsed, 1))
+            );
+            const winner = score1 > score2 ? 1 : 2;
+            const loser = winner === 1 ? 2 : 1;
+
+            const updatedMatch = {
+                ...match,
+                score1,
+                score2,
+                winner,
+                meta: {
+                    team1PtsBefore,
+                    team2PtsBefore,
+                    ratingDiff,
+                    scoreDiff,
+                    divisorUsed,
+                    pointDelta,
+                },
+            };
+
+            (updatedMatch[`team${winner}`] || []).forEach((pid) => {
+                if (!rankingMap[pid]) rankingMap[pid] = { points: 0 };
+                rankingMap[pid].points += pointDelta;
+            });
+
+            (updatedMatch[`team${loser}`] || []).forEach((pid) => {
+                if (!rankingMap[pid]) rankingMap[pid] = { points: 0 };
+                rankingMap[pid].points -= pointDelta;
+            });
+
+            return updatedMatch;
+        });
+
+        const updatedMap = new Map(
+            updatedSorted.map((match) => [match.id, match])
+        );
+
+        return matchesInput.map((match) => updatedMap.get(match.id) || match);
+    };
+
+    const saveEditedMatch = async () => {
+        if (!editingMatchId) return;
+        if (editingMatchScore1 === "" || editingMatchScore2 === "") {
+            alert("Vui lòng nhập đầy đủ điểm");
+            return;
+        }
+
+        const s1 = Number(editingMatchScore1);
+        const s2 = Number(editingMatchScore2);
+
+        if (!Number.isFinite(s1) || !Number.isFinite(s2) || s1 === s2) {
+            alert("Điểm không hợp lệ (không được hòa)");
+            return;
+        }
+
+        setIsUpdatingMatches(true);
+
+        try {
+            const maxPerTeam = editingMatchType === "singles" ? 1 : 2;
+            if (editingMatchTeam1.length !== maxPerTeam || editingMatchTeam2.length !== maxPerTeam) {
+                alert(`Mỗi đội cần ${maxPerTeam} người chơi`);
+                return;
+            }
+
+            const allPlayers = [...editingMatchTeam1, ...editingMatchTeam2];
+            if (new Set(allPlayers).size !== allPlayers.length) {
+                alert("Một người không thể ở cả hai đội");
+                return;
+            }
+
+            const updatedMatches = matches.map((match) =>
+                match.id === editingMatchId
+                    ? {
+                          ...match,
+                          type: editingMatchType,
+                          team1: editingMatchTeam1,
+                          team2: editingMatchTeam2,
+                          score1: s1,
+                          score2: s2,
+                          winner: s1 > s2 ? 1 : 2,
+                      }
+                    : match
+            );
+
+            const matchesWithMeta = recomputeMatchesWithMeta(updatedMatches);
+
+            const payload = matchesWithMeta.map((match) => ({
+                id: match.id,
+                type: match.type,
+                team1: match.team1,
+                team2: match.team2,
+                score1: match.score1,
+                score2: match.score2,
+                winner: match.winner,
+                date: match.date,
+                meta: match.meta,
+            }));
+
+            const { error } = await supabase
+                .from("matches")
+                .upsert(payload);
+
+            if (error) throw error;
+
+            setMatches(matchesWithMeta);
+            cancelEditingMatch();
+            alert("Đã cập nhật lịch sử đấu và làm mới meta");
+        } catch (err) {
+            console.error(err);
+            alert("Không thể cập nhật lịch sử đấu. Vui lòng thử lại");
+        } finally {
+            setIsUpdatingMatches(false);
+        }
+    };
+
     const rankingData = calculateRanking();
+    const playerFilterOptions = [...players].sort((a, b) =>
+        a.name.localeCompare(b.name, "vi", { sensitivity: "base" })
+    );
+    const playerFilterId = historyPlayerFilter === "all" ? null : historyPlayerFilter;
+    const startDateFilter = historyStartDate
+        ? new Date(`${historyStartDate}T00:00:00`)
+        : null;
+    const endDateFilter = historyEndDate
+        ? new Date(`${historyEndDate}T23:59:59.999`)
+        : null;
+    const hasPlayerInTeam = (teamPlayers, targetId) => {
+        if (targetId == null) return true;
+        return (teamPlayers || []).some((id) => String(id) === String(targetId));
+    };
+    const filteredMatches = matches.filter((match) => {
+        const typeMatch = historyFilter === "all" ? true : match.type === historyFilter;
+        const playerMatch = hasPlayerInTeam(match.team1, playerFilterId) || hasPlayerInTeam(match.team2, playerFilterId);
+        const matchDate = new Date(match.date);
+        const afterStart = startDateFilter ? matchDate >= startDateFilter : true;
+        const beforeEnd = endDateFilter ? matchDate <= endDateFilter : true;
+        return typeMatch && playerMatch && afterStart && beforeEnd;
+    });
 
     /* =======================
        RENDER
@@ -314,7 +591,16 @@ function App() {
 
             {/* ---- CONTENT ---- */}
             <main className="main-content">
-                {/* Xếp hạng */}
+                {!isLoaded && (
+                    <div className="loading-state">
+                        <div className="loading-spinner" />
+                        <p>Đang tải dữ liệu...</p>
+                    </div>
+                )}
+
+                {isLoaded && (
+                    <>
+                    {/* Xếp hạng */}
                 {activeTab === "ranking" && (
                     <section className="section">
                         <h2 className="section-title">Bảng Xếp Hạng</h2>
@@ -375,26 +661,14 @@ function App() {
                                 <h3 className="team-title">Đội 1</h3>
                                 <div className="team-players-display">
                                     {team1.players.length === 0 ? (
-                                        <div className="placeholder">
-                                            Chưa chọn
-                                        </div>
+                                        <div className="placeholder">Chưa chọn</div>
                                     ) : (
                                         team1.players.map((playerId) => (
-                                            <div
-                                                key={playerId}
-                                                className="player-tag"
-                                            >
-                                                <span>
-                                                    {getPlayerName(playerId)}
-                                                </span>
+                                            <div key={playerId} className="player-tag">
+                                                <span>{getPlayerName(playerId)}</span>
                                                 <button
                                                     className="remove-tag-btn"
-                                                    onClick={() =>
-                                                        removePlayerFromTeam(
-                                                            1,
-                                                            playerId
-                                                        )
-                                                    }
+                                                    onClick={() => removePlayerFromTeam(1, playerId)}
                                                 >
                                                     ✕
                                                 </button>
@@ -404,22 +678,14 @@ function App() {
                                 </div>
                                 {/* Danh sách người chơi có thể chọn vào đội 1 */}
                                 <div className="player-buttons">
-                                    {players
-                                        .filter(
-                                            (p) =>
-                                                !team1.players.includes(p.id) &&
-                                                !team2.players.includes(p.id)
-                                        )
+                                    {[...players]
+                                        .filter((p) => !team1.players.includes(p.id) && !team2.players.includes(p.id))
+                                        .sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }))
                                         .map((player) => (
                                             <button
                                                 key={player.id}
                                                 className="player-select-btn"
-                                                onClick={() =>
-                                                    addPlayerToTeam(
-                                                        1,
-                                                        player.id
-                                                    )
-                                                }
+                                                onClick={() => addPlayerToTeam(1, player.id)}
                                             >
                                                 {player.name}
                                             </button>
@@ -435,26 +701,14 @@ function App() {
                                 <h3 className="team-title">Đội 2</h3>
                                 <div className="team-players-display">
                                     {team2.players.length === 0 ? (
-                                        <div className="placeholder">
-                                            Chưa chọn
-                                        </div>
+                                        <div className="placeholder">Chưa chọn</div>
                                     ) : (
                                         team2.players.map((playerId) => (
-                                            <div
-                                                key={playerId}
-                                                className="player-tag"
-                                            >
-                                                <span>
-                                                    {getPlayerName(playerId)}
-                                                </span>
+                                            <div key={playerId} className="player-tag">
+                                                <span>{getPlayerName(playerId)}</span>
                                                 <button
                                                     className="remove-tag-btn"
-                                                    onClick={() =>
-                                                        removePlayerFromTeam(
-                                                            2,
-                                                            playerId
-                                                        )
-                                                    }
+                                                    onClick={() => removePlayerFromTeam(2, playerId)}
                                                 >
                                                     ✕
                                                 </button>
@@ -464,22 +718,14 @@ function App() {
                                 </div>
                                 {/* Danh sách người chơi có thể chọn vào đội 2 */}
                                 <div className="player-buttons">
-                                    {players
-                                        .filter(
-                                            (p) =>
-                                                !team1.players.includes(p.id) &&
-                                                !team2.players.includes(p.id)
-                                        )
+                                    {[...players]
+                                        .filter((p) => !team1.players.includes(p.id) && !team2.players.includes(p.id))
+                                        .sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }))
                                         .map((player) => (
                                             <button
                                                 key={player.id}
                                                 className="player-select-btn"
-                                                onClick={() =>
-                                                    addPlayerToTeam(
-                                                        2,
-                                                        player.id
-                                                    )
-                                                }
+                                                onClick={() => addPlayerToTeam(2, player.id)}
                                             >
                                                 {player.name}
                                             </button>
@@ -513,13 +759,7 @@ function App() {
                                     }}
                                     style={{ flex: 1, minWidth: 0 }}
                                 />
-
-                                <span
-                                    style={{ fontWeight: 500, flexShrink: 0 }}
-                                >
-                                    -
-                                </span>
-
+                                <span style={{ fontWeight: 500, flexShrink: 0 }}>-</span>
                                 <input
                                     type="number"
                                     className="input-field"
@@ -535,7 +775,7 @@ function App() {
                             </div>
                         </div>
 
-                        {/* Chọn đội thắng và lưu trận (giữ UI cũ, nhưng winner sẽ tự tính theo score) */}
+                        {/* Chọn đội thắng và lưu trận */}
                         <div
                             className="result-buttons"
                             style={{
@@ -590,31 +830,68 @@ function App() {
                             </div>
                         ) : (
                             <div className="players-list">
-                                {players.map((player) => (
-                                    <div
-                                        key={player.id}
-                                        className="player-item"
-                                    >
-                                        <div className="player-name">
-                                            {player.name}
-                                        </div>
-                                        <button
-                                            className="btn-delete"
-                                            type="button"
-                                            onClick={() => {
-                                                if (
-                                                    window.confirm(
-                                                        `Bạn có chắc muốn xoá "${player.name}" không?`
-                                                    )
-                                                ) {
-                                                    deletePlayer(player.id);
-                                                }
-                                            }}
+                                {[...players]
+                                    .sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }))
+                                    .map((player) => (
+                                        <div
+                                            key={player.id}
+                                            className="player-item"
                                         >
-                                            Xoá
-                                        </button>
-                                    </div>
-                                ))}
+                                            {editingPlayerId === player.id ? (
+                                                <>
+                                                    <input
+                                                        type="text"
+                                                        className="input-field"
+                                                        style={{ flex: 1, marginRight: 8 }}
+                                                        value={editingPlayerName}
+                                                        onChange={(e) => setEditingPlayerName(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") savePlayerName();
+                                                            if (e.key === "Escape") cancelEditingPlayer();
+                                                        }}
+                                                    />
+                                                    <div className="player-actions" style={{ display: "flex", gap: 6 }}>
+                                                        <button className="btn btn-primary" type="button" onClick={savePlayerName}>
+                                                            Lưu
+                                                        </button>
+                                                        <button className="btn" type="button" onClick={cancelEditingPlayer}>
+                                                            Huỷ
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="player-name" style={{ flex: 1 }}>
+                                                        {player.name}
+                                                    </div>
+                                                    <div className="player-actions" style={{ display: "flex", gap: 6 }}>
+                                                        <button
+                                                            className="btn"
+                                                            type="button"
+                                                            onClick={() => startEditingPlayer(player)}
+                                                        >
+                                                            Sửa
+                                                        </button>
+                                                        <button
+                                                            className="btn-delete"
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (
+                                                                    window.confirm(
+                                                                        `Bạn có chắc muốn xoá "${player.name}" không?`
+                                                                    )
+                                                                ) {
+                                                                    deletePlayer(player.id);
+                                                                }
+                                                            }}
+                                                        >
+                                                            Xoá
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
                             </div>
                         )}
                     </section>
@@ -624,11 +901,87 @@ function App() {
                 {activeTab === "history" && (
                     <section className="section">
                         <h2 className="section-title">Lịch Sử Trận Đấu</h2>
+                        {matches.length > 0 && (
+                            <div className="history-filters">
+                                <div className="filter-row">
+                                    <div className="filter-group">
+                                        <span className="filter-label">Loại trận</span>
+                                        <div className="filter-chips">
+                                            {["all", "singles", "doubles"].map((key) => (
+                                                <button
+                                                    key={key}
+                                                    className={`filter-chip ${historyFilter === key ? "active" : ""}`}
+                                                    onClick={() => setHistoryFilter(key)}
+                                                >
+                                                    {key === "all"
+                                                        ? "Tất cả"
+                                                        : key === "singles"
+                                                            ? "Trận Đơn"
+                                                            : "Trận Đôi"}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="filter-group filter-player">
+                                        <span className="filter-label">Người chơi</span>
+                                        <select
+                                            className="input-field"
+                                            value={historyPlayerFilter}
+                                            onChange={(e) => setHistoryPlayerFilter(e.target.value)}
+                                        >
+                                            <option value="all">Tất cả</option>
+                                            {playerFilterOptions.map((player) => (
+                                                <option key={player.id} value={player.id}>
+                                                    {player.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="filter-row">
+                                    <div className="filter-group filter-dates">
+                                        <span className="filter-label">Khoảng thời gian</span>
+                                        <div className="date-grid">
+                                            <label className="date-field">
+                                                <span>Từ ngày</span>
+                                                <input
+                                                    type="date"
+                                                    className="input-field"
+                                                    value={historyStartDate}
+                                                    onChange={(e) => setHistoryStartDate(e.target.value)}
+                                                />
+                                            </label>
+                                            <label className="date-field">
+                                                <span>Đến ngày</span>
+                                                <input
+                                                    type="date"
+                                                    className="input-field"
+                                                    value={historyEndDate}
+                                                    onChange={(e) => setHistoryEndDate(e.target.value)}
+                                                />
+                                            </label>
+                                            <button
+                                                className="filter-reset"
+                                                type="button"
+                                                onClick={() => {
+                                                    setHistoryStartDate("");
+                                                    setHistoryEndDate("");
+                                                }}
+                                            >
+                                                Xóa lọc ngày
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {matches.length === 0 ? (
                             <div className="empty-state">Chưa có trận đấu</div>
+                        ) : filteredMatches.length === 0 ? (
+                            <div className="empty-state">Không có trận đấu phù hợp</div>
                         ) : (
                             <div className="history-list">
-                                {matches
+                                {filteredMatches
                                     .slice()
                                     .reverse()
                                     .map((match) => (
@@ -690,6 +1043,172 @@ function App() {
                                                         .join(", ")}
                                                 </div>
                                             </div>
+                                            {editingMatchId === match.id ? (
+                                                <div className="history-edit-form" style={{ marginTop: 12, width: "100%" }}>
+                                                    {/* Match type */}
+                                                    <div style={{ marginBottom: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>
+                                                        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                            <input
+                                                                type="radio"
+                                                                value="singles"
+                                                                checked={editingMatchType === "singles"}
+                                                                onChange={(e) => {
+                                                                    setEditingMatchType(e.target.value);
+                                                                    setEditingMatchTeam1(editingMatchTeam1.slice(0, 1));
+                                                                    setEditingMatchTeam2(editingMatchTeam2.slice(0, 1));
+                                                                }}
+                                                                disabled={isUpdatingMatches}
+                                                            />
+                                                            <span>Trận Đơn</span>
+                                                        </label>
+                                                        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                                            <input
+                                                                type="radio"
+                                                                value="doubles"
+                                                                checked={editingMatchType === "doubles"}
+                                                                onChange={(e) => setEditingMatchType(e.target.value)}
+                                                                disabled={isUpdatingMatches}
+                                                            />
+                                                            <span>Trận Đôi</span>
+                                                        </label>
+                                                    </div>
+
+                                                    {/* Teams editing */}
+                                                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 12, marginBottom: 12 }}>
+                                                        <div>
+                                                            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Đội 1</div>
+                                                            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                                                                {editingMatchTeam1.map((pid) => (
+                                                                    <div key={pid} className="player-tag" style={{ justifyContent: "space-between" }}>
+                                                                        <span>{getPlayerName(pid)}</span>
+                                                                        <button
+                                                                            className="remove-tag-btn"
+                                                                            type="button"
+                                                                            onClick={() => setEditingMatchTeam1(editingMatchTeam1.filter((id) => id !== pid))}
+                                                                            disabled={isUpdatingMatches}
+                                                                        >
+                                                                            ✕
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <select
+                                                                className="input-field"
+                                                                style={{ width: "100%" }}
+                                                                value=""
+                                                                onChange={(e) => {
+                                                                    const pid = e.target.value;
+                                                                    const maxPerTeam = editingMatchType === "singles" ? 1 : 2;
+                                                                    if (pid && editingMatchTeam1.length < maxPerTeam && !editingMatchTeam1.includes(pid) && !editingMatchTeam2.includes(pid)) {
+                                                                        setEditingMatchTeam1([...editingMatchTeam1, pid]);
+                                                                    }
+                                                                }}
+                                                                disabled={isUpdatingMatches}
+                                                            >
+                                                                <option value="">+ Thêm người chơi</option>
+                                                                {playerFilterOptions
+                                                                    .filter((p) => !editingMatchTeam1.includes(p.id) && !editingMatchTeam2.includes(p.id))
+                                                                    .map((p) => (
+                                                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                                                    ))}
+                                                            </select>
+                                                        </div>
+                                                        <div style={{ display: "flex", alignItems: "center", color: "#94a3b8", fontWeight: 600 }}>VS</div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Đội 2</div>
+                                                            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+                                                                {editingMatchTeam2.map((pid) => (
+                                                                    <div key={pid} className="player-tag" style={{ justifyContent: "space-between" }}>
+                                                                        <span>{getPlayerName(pid)}</span>
+                                                                        <button
+                                                                            className="remove-tag-btn"
+                                                                            type="button"
+                                                                            onClick={() => setEditingMatchTeam2(editingMatchTeam2.filter((id) => id !== pid))}
+                                                                            disabled={isUpdatingMatches}
+                                                                        >
+                                                                            ✕
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <select
+                                                                className="input-field"
+                                                                style={{ width: "100%" }}
+                                                                value=""
+                                                                onChange={(e) => {
+                                                                    const pid = e.target.value;
+                                                                    const maxPerTeam = editingMatchType === "singles" ? 1 : 2;
+                                                                    if (pid && editingMatchTeam2.length < maxPerTeam && !editingMatchTeam1.includes(pid) && !editingMatchTeam2.includes(pid)) {
+                                                                        setEditingMatchTeam2([...editingMatchTeam2, pid]);
+                                                                    }
+                                                                }}
+                                                                disabled={isUpdatingMatches}
+                                                            >
+                                                                <option value="">+ Thêm người chơi</option>
+                                                                {playerFilterOptions
+                                                                    .filter((p) => !editingMatchTeam1.includes(p.id) && !editingMatchTeam2.includes(p.id))
+                                                                    .map((p) => (
+                                                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                                                    ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Score editing */}
+                                                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+                                                        <span style={{ fontWeight: 500, fontSize: 13 }}>Điểm:</span>
+                                                        <input
+                                                            type="number"
+                                                            className="input-field"
+                                                            style={{ width: 80 }}
+                                                            min={0}
+                                                            value={editingMatchScore1}
+                                                            onChange={(e) => setEditingMatchScore1(e.target.value)}
+                                                            disabled={isUpdatingMatches}
+                                                        />
+                                                        <span style={{ fontWeight: 600 }}>-</span>
+                                                        <input
+                                                            type="number"
+                                                            className="input-field"
+                                                            style={{ width: 80 }}
+                                                            min={0}
+                                                            value={editingMatchScore2}
+                                                            onChange={(e) => setEditingMatchScore2(e.target.value)}
+                                                            disabled={isUpdatingMatches}
+                                                        />
+                                                    </div>
+
+                                                    {/* Buttons */}
+                                                    <div style={{ display: "flex", gap: 8 }}>
+                                                        <button
+                                                            className="btn btn-primary"
+                                                            type="button"
+                                                            onClick={saveEditedMatch}
+                                                            disabled={isUpdatingMatches}
+                                                        >
+                                                            {isUpdatingMatches ? "Đang lưu..." : "Cập nhật"}
+                                                        </button>
+                                                        <button
+                                                            className="btn"
+                                                            type="button"
+                                                            onClick={cancelEditingMatch}
+                                                            disabled={isUpdatingMatches}
+                                                        >
+                                                            Huỷ
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div style={{ marginTop: 8 }}>
+                                                    <button
+                                                        className="btn"
+                                                        type="button"
+                                                        onClick={() => startEditingMatch(match)}
+                                                    >
+                                                        Chỉnh sửa
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                             </div>
@@ -822,15 +1341,22 @@ function App() {
                             <button
                                 className="btn btn-primary"
                                 onClick={async () => {
-                                    await fetch(API_URL, {
-                                        method: "POST",
-                                        mode: "no-cors",
-                                        headers: {
-                                            "Content-Type": "application/json",
-                                        },
-                                        body: JSON.stringify({ scoreConfig }),
-                                    });
-                                    alert("Đã lưu cấu hình");
+                                    try {
+                                        // Xóa toàn bộ cấu hình cũ
+                                        const { error: delError } = await supabase.from("scoreconfig").delete().gt("id", -1);
+                                        if (delError) throw delError;
+                                        // Thêm lại cấu hình mới (không truyền id)
+                                        const insertRows = scoreConfig.map(({ maxPointDiff, divisor }) => ({ maxPointDiff, divisor }));
+                                        const { error: insError } = await supabase.from("scoreconfig").insert(insertRows);
+                                        if (insError) throw insError;
+                                        // Reload lại dữ liệu
+                                        const { data: scoreConfigData, error: selError } = await supabase.from("scoreconfig").select("*");
+                                        if (selError) throw selError;
+                                        setScoreConfig(scoreConfigData || []);
+                                        alert("Đã lưu cấu hình vào Supabase");
+                                    } catch (err) {
+                                        alert("Lỗi cập nhật Supabase: " + (err.message || err));
+                                    }
                                 }}
                             >
                                 Lưu cấu hình
@@ -848,6 +1374,8 @@ function App() {
 
                 {/* Các tab khác giữ nguyên UI như cũ */}
                 {/* (Không cắt bớt để tránh phá layout của bạn) */}
+                    </>
+                )}
             </main>
         </div>
     );
