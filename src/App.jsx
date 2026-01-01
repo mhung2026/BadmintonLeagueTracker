@@ -365,7 +365,15 @@ function App() {
        MATCH HISTORY EDITING
     ======================= */
 
+    const EDIT_MATCH_CODE = "Hungvjppro";
+
     const startEditingMatch = (match) => {
+        const code = prompt("Nhập mã xác nhận để chỉnh sửa:");
+        if (code !== EDIT_MATCH_CODE) {
+            alert("Mã xác nhận không đúng!");
+            return;
+        }
+
         setEditingMatchId(match.id);
         setEditingMatchScore1(
             match.score1 === null || match.score1 === undefined
