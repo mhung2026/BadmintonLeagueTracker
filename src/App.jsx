@@ -605,18 +605,23 @@ function App() {
                     <section className="section">
                         <h2 className="section-title">Bảng Xếp Hạng</h2>
 
-                        {rankingData.map((p, i) => (
+                        {rankingData.map((p, i) => {
+                            const winRate = p.totalMatches > 0
+                                ? Math.round((p.wins / p.totalMatches) * 100)
+                                : 0;
+                            return (
                             <div key={p.name + i} className="ranking-item">
                                 <div className="rank-number">#{i + 1}</div>
                                 <div className="player-details">
                                     <div className="player-name">{p.name}</div>
                                     <div className="player-stats">
-                                        {p.totalMatches} trận • {p.wins} thắng
+                                        {p.totalMatches} trận • {p.wins} thắng • {winRate}% thắng
                                     </div>
                                 </div>
                                 <div className="player-points">{p.points}</div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </section>
                 )}
                 {/* Tab Tạo Trận Đấu */}
