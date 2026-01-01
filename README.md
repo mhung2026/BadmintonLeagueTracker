@@ -32,6 +32,8 @@
 - Chỉ áp dụng cho trận mới
 
 ### Tính năng nâng cao
+- **Toast notifications**: Thông báo trạng thái thao tác (thành công/lỗi)
+- **Skeleton loading**: Hiệu ứng loading đẹp mắt thay vì spinner
 - **Realtime sync**: Đồng bộ dữ liệu tự động giữa các client
 - **Inline validation**: Kiểm tra lỗi nhập liệu ngay lập tức
 - **Error Boundary**: Bắt lỗi render, tránh crash toàn app
@@ -41,8 +43,9 @@
 
 | Thành phần | Công nghệ |
 |------------|-----------|
-| Frontend | React + Vite |
+| Frontend | React 19 + Vite |
 | Database | Supabase (PostgreSQL) |
+| Testing | Jest (ESM) |
 | Hosting | Vercel |
 | Styling | CSS thuần (mobile-first) |
 
@@ -118,11 +121,16 @@ BadmintonLeagueTracker/
 │   └── favicon.png
 ├── src/
 │   ├── App.jsx            # Component chính
-│   ├── App.css            # Styles
+│   ├── App.css            # Styles chính
 │   ├── ErrorBoundary.jsx  # Bắt lỗi render
+│   ├── Toast.jsx          # Toast notifications
+│   ├── Skeleton.jsx       # Skeleton loading components
+│   ├── Skeleton.css       # Skeleton styles
 │   ├── supabaseClient.js  # Kết nối Supabase
-│   ├── utils.js           # Hàm tiện ích
-│   └── *.unit.test.js     # Unit tests
+│   ├── utils.js           # Hàm tiện ích (dùng chung)
+│   ├── main.jsx           # Entry point
+│   ├── index.css          # Global styles
+│   └── *.unit.test.js     # Unit tests (11 tests)
 ├── docs/
 │   ├── SRS.md             # Tài liệu yêu cầu
 │   ├── SUPABASE_GUIDE.md  # Hướng dẫn Supabase
@@ -132,6 +140,7 @@ BadmintonLeagueTracker/
 ├── .env.example           # Mẫu biến môi trường
 ├── index.html
 ├── package.json
+├── jest.config.js         # Cấu hình Jest ESM
 └── vite.config.js
 ```
 
