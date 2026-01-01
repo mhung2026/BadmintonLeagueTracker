@@ -25,10 +25,17 @@
 - Chỉnh sửa lịch sử đấu (yêu cầu mã xác nhận)
 - Khi chỉnh sửa: có thể thay đổi điểm số, thay đổi người chơi
 - Tự động tính lại meta cho toàn bộ trận sau khi cập nhật
+- **Phân trang** 10 trận/trang
 
 ### Cấu hình tính điểm
 - Tùy chỉnh quy tắc chia điểm (chênh lệch tối đa, hệ số chia)
 - Chỉ áp dụng cho trận mới
+
+### Tính năng nâng cao
+- **Realtime sync**: Đồng bộ dữ liệu tự động giữa các client
+- **Inline validation**: Kiểm tra lỗi nhập liệu ngay lập tức
+- **Error Boundary**: Bắt lỗi render, tránh crash toàn app
+- **Performance optimized**: Sử dụng useMemo để cache kết quả tính toán
 
 ## 🛠 Công Nghệ
 
@@ -57,10 +64,11 @@ npm install
 ```
 
 ### 3. Cấu hình môi trường
-Tạo file `.env` tại thư mục gốc:
+Tạo file `.env` tại thư mục gốc (tham khảo `.env.example`):
 ```env
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_EDIT_MATCH_CODE=your_secret_code
 ```
 
 ### 4. Chạy local
@@ -109,15 +117,19 @@ BadmintonLeagueTracker/
 ├── public/
 │   └── favicon.png
 ├── src/
-│   ├── App.jsx          # Component chính
-│   ├── App.css          # Styles
-│   ├── supabaseClient.js # Kết nối Supabase
-│   └── utils.js         # Hàm tiện ích
+│   ├── App.jsx            # Component chính
+│   ├── App.css            # Styles
+│   ├── ErrorBoundary.jsx  # Bắt lỗi render
+│   ├── supabaseClient.js  # Kết nối Supabase
+│   ├── utils.js           # Hàm tiện ích
+│   └── *.unit.test.js     # Unit tests
 ├── docs/
-│   ├── SRS.md           # Tài liệu yêu cầu
-│   ├── SUPABASE_GUIDE.md # Hướng dẫn Supabase
-│   └── TESTCASE.md      # Test cases
-├── .env                 # Biến môi trường (không commit)
+│   ├── SRS.md             # Tài liệu yêu cầu
+│   ├── SUPABASE_GUIDE.md  # Hướng dẫn Supabase
+│   ├── TESTCASE.md        # Test cases
+│   └── TESTCASE_DETAIL.md # Chi tiết test cases
+├── .env                   # Biến môi trường (không commit)
+├── .env.example           # Mẫu biến môi trường
 ├── index.html
 ├── package.json
 └── vite.config.js

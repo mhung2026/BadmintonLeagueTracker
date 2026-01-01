@@ -78,10 +78,10 @@ test('calcPointDelta tính đúng', () => {
 
 ### 2.4. Hàm formatDateLocal
 ```js
-import { formatDateLocal } from '../src/App';
-test('formatDateLocal trả về đúng định dạng', () => {
+import { formatDateLocal } from '../src/utils.js';
+test('formatDateLocal trả về đúng định dạng hh:mm dd/MM/yyyy', () => {
   const iso = '2025-01-01T10:30:00.000Z';
-  expect(formatDateLocal(iso)).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+  expect(formatDateLocal(iso)).toMatch(/\d{2}:\d{2} \d{2}\/\d{2}\/\d{4}/);
 });
 ```
 

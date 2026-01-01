@@ -1,4 +1,4 @@
-import { getTeamPoints, getDivisorByPointDiff, formatDateLocal } from './App';
+import { getTeamPoints, getDivisorByPointDiff, formatDateLocal } from './utils.js';
 
 describe('getTeamPoints', () => {
   it('tính tổng điểm đúng', () => {
@@ -38,8 +38,8 @@ describe('calcPointDelta', () => {
 });
 
 describe('formatDateLocal', () => {
-  it('trả về đúng định dạng', () => {
+  it('trả về đúng định dạng hh:mm dd/MM/yyyy', () => {
     const iso = '2025-01-01T10:30:00.000Z';
-    expect(formatDateLocal(iso)).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+    expect(formatDateLocal(iso)).toBe('17:30 01/01/2025');
   });
 });

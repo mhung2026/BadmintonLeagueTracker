@@ -21,9 +21,11 @@ export function calcPointDelta(team1Pts, team2Pts, divisor) {
 
 export function formatDateLocal(isoString) {
   const d = new Date(isoString);
-  return d.toLocaleString("vi-VN", {
-    hour12: false,
-    dateStyle: "short",
-    timeStyle: "short",
-  });
+  const pad = (n) => n.toString().padStart(2, '0');
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  const dd = pad(d.getDate());
+  const MM = pad(d.getMonth() + 1);
+  const yyyy = d.getFullYear();
+  return `${hh}:${mm} ${dd}/${MM}/${yyyy}`;
 }

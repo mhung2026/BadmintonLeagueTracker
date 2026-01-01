@@ -1,9 +1,13 @@
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import "./App.css";
 import { supabase } from "./supabaseClient";
+import { getTeamPoints, getDivisorByPointDiff as getDivisorByPointDiffUtil, formatDateLocal as formatDateLocalUtil } from "./utils.js";
+import { useToast } from "./Toast.jsx";
+import { SkeletonRanking, SkeletonCard, SkeletonTable } from "./Skeleton.jsx";
 
 function App() {
+    const { addToast } = useToast();
     const [isLoaded, setIsLoaded] = useState(false);
 
     const [players, setPlayers] = useState([]);
@@ -33,6 +37,15 @@ function App() {
     const [scoreTeam1, setScoreTeam1] = useState("");
     const [scoreTeam2, setScoreTeam2] = useState("");
 
+    // Validation states
+    const [playerNameError, setPlayerNameError] = useState("");
+    const [scoreError, setScoreError] = useState("");
+
+    // Loading states
+    const [isAddingPlayer, setIsAddingPlayer] = useState(false);
+    const [isCreatingMatch, setIsCreatingMatch] = useState(false);
+    const [isSavingConfig, setIsSavingConfig] = useState(false);
+
     /* =======================
        HELPERS
     ======================= */
@@ -43,39 +56,15 @@ function App() {
     const formatDateLocal = (isoString) => {
         const d = new Date(isoString);
         if (Number.isNaN(d.getTime())) return "--:-- --/--/----";
-        const pad = (val) => String(val).padStart(2, "0");
-        const hours = pad(d.getHours());
-        const minutes = pad(d.getMinutes());
-        const day = pad(d.getDate());
-        const month = pad(d.getMonth() + 1);
-        const year = d.getFullYear();
-        return `${hours}:${minutes} ${day}/${month}/${year}`;
+        return formatDateLocalUtil(isoString);
     };
 
     const getDivisorByPointDiff = (diff) => {
         if (!scoreConfig.length) return 2;
-
-        const sorted = [...scoreConfig].sort(
-            (a, b) => (a.maxPointDiff ?? 0) - (b.maxPointDiff ?? 0)
-        );
-
-        let divisor = sorted[0]?.divisor ?? 2;
-        for (const rule of sorted) {
-            if (diff >= (rule.maxPointDiff ?? 0)) {
-                divisor = rule.divisor;
-            } else {
-                break;
-            }
-        }
-
-        return divisor ?? 2;
+        return getDivisorByPointDiffUtil(diff, scoreConfig);
     };
 
-    const getTeamPoints = (teamPlayers, rankingMap) => {
-        return (teamPlayers || []).reduce((sum, pid) => {
-            return sum + (rankingMap[pid]?.points ?? 0);
-        }, 0);
-    };
+    // Sử dụng getTeamPoints từ utils.js
 
     const fetchPlayers = useCallback(async () => {
         const { data, error } = await supabase.from("players").select("*");
@@ -131,26 +120,72 @@ function App() {
     ======================= */
 
     useEffect(() => {
-        // Không autosave toàn bộ payload như Google Sheets nữa
-        // Mỗi thao tác sẽ gọi Supabase CRUD riêng
-    }, []);
+        // Supabase Realtime subscriptions
+        const playersChannel = supabase
+            .channel('players-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => {
+                fetchPlayers();
+            })
+            .subscribe();
+
+        const matchesChannel = supabase
+            .channel('matches-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
+                fetchMatches();
+            })
+            .subscribe();
+
+        const configChannel = supabase
+            .channel('scoreconfig-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'scoreconfig' }, () => {
+                fetchScoreConfig();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(playersChannel);
+            supabase.removeChannel(matchesChannel);
+            supabase.removeChannel(configChannel);
+        };
+    }, [fetchPlayers, fetchMatches, fetchScoreConfig]);
 
     /* =======================
        PLAYERS
     ======================= */
 
     const addPlayer = async () => {
-        if (!newPlayerName.trim()) return;
-        const newPlayer = { name: newPlayerName.trim() };
-
-        const { error } = await supabase.from("players").insert([newPlayer]);
-        if (error) {
-            alert("Không thể thêm người chơi mới. Vui lòng thử lại.");
+        const trimmedName = newPlayerName.trim();
+        
+        // Validation
+        if (!trimmedName) {
+            setPlayerNameError("Vui lòng nhập tên người chơi");
             return;
         }
+        if (trimmedName.length < 2) {
+            setPlayerNameError("Tên phải có ít nhất 2 ký tự");
+            return;
+        }
+        if (players.some(p => p.name.toLowerCase() === trimmedName.toLowerCase())) {
+            setPlayerNameError("Tên người chơi đã tồn tại");
+            return;
+        }
+        
+        setPlayerNameError("");
+        setIsAddingPlayer(true);
+        const newPlayer = { name: trimmedName };
 
-        setNewPlayerName("");
-        fetchPlayers();
+        try {
+            const { error } = await supabase.from("players").insert([newPlayer]);
+            if (error) {
+                setPlayerNameError("Không thể thêm người chơi mới. Vui lòng thử lại.");
+                return;
+            }
+
+            setNewPlayerName("");
+            fetchPlayers();
+        } finally {
+            setIsAddingPlayer(false);
+        }
     };
 
     const deletePlayer = (id) => {
@@ -158,7 +193,7 @@ function App() {
             (m) => m.team1.includes(id) || m.team2.includes(id)
         );
         if (hasHistory) {
-            alert("Không thể xóa người chơi đã có lịch sử thi đấu.");
+            addToast("Không thể xóa người chơi đã có lịch sử thi đấu.", "error");
             return;
         }
         supabase.from("players").delete().eq("id", id).then(() => {
@@ -185,7 +220,7 @@ function App() {
             .eq("id", editingPlayerId);
 
         if (error) {
-            alert("Không thể cập nhật tên. Vui lòng thử lại.");
+            addToast("Không thể cập nhật tên. Vui lòng thử lại.", "error");
             return;
         }
 
@@ -233,6 +268,9 @@ function App() {
     ======================= */
 
     const createMatch = async () => {
+        // Clear previous errors
+        setScoreError("");
+        
         const isValidSingles =
             matchType === "singles" &&
             team1.players.length === 1 &&
@@ -243,19 +281,38 @@ function App() {
             team1.players.length === 2 &&
             team2.players.length === 2;
 
-        if (!(isValidSingles || isValidDoubles)) return;
+        if (!(isValidSingles || isValidDoubles)) {
+            const required = matchType === "singles" ? 1 : 2;
+            setScoreError(`Vui lòng chọn ${required} người cho mỗi đội`);
+            return;
+        }
 
         const allPlayers = [...team1.players, ...team2.players];
         if (new Set(allPlayers).size !== allPlayers.length) {
-            alert("Một người không thể ở cả hai đội");
+            setScoreError("Một người không thể ở cả hai đội");
             return;
         }
 
         const s1 = Number(scoreTeam1);
         const s2 = Number(scoreTeam2);
 
-        if (!Number.isFinite(s1) || !Number.isFinite(s2) || s1 === s2) {
-            alert("Vui lòng nhập điểm hợp lệ (không được hòa)");
+        if (scoreTeam1 === "" || scoreTeam2 === "") {
+            setScoreError("Vui lòng nhập điểm cho cả hai đội");
+            return;
+        }
+        
+        if (!Number.isFinite(s1) || !Number.isFinite(s2)) {
+            setScoreError("Điểm phải là số hợp lệ");
+            return;
+        }
+        
+        if (s1 < 0 || s2 < 0) {
+            setScoreError("Điểm không được âm");
+            return;
+        }
+        
+        if (s1 === s2) {
+            setScoreError("Điểm không được hòa");
             return;
         }
 
@@ -288,6 +345,7 @@ function App() {
                 pointDelta,
             },
         };
+        setIsCreatingMatch(true);
         try {
             const { error } = await supabase
                 .from("matches")
@@ -301,11 +359,14 @@ function App() {
             setMatchType("doubles");
             setScoreTeam1("");
             setScoreTeam2("");
+            setScoreError("");
 
-            alert("Trận đấu đã được lưu (đã chốt điểm)");
+            addToast("Trận đấu đã được lưu (đã chốt điểm)", "success");
         } catch (err) {
             console.error("Không thể lưu trận đấu", err);
-            alert("Không thể lưu trận đấu. Vui lòng thử lại.");
+            setScoreError("Không thể lưu trận đấu. Vui lòng thử lại.");
+        } finally {
+            setIsCreatingMatch(false);
         }
     };
 
@@ -365,12 +426,12 @@ function App() {
        MATCH HISTORY EDITING
     ======================= */
 
-    const EDIT_MATCH_CODE = "Hungvjppro";
+    const EDIT_MATCH_CODE = import.meta.env.VITE_EDIT_MATCH_CODE || "default-code";
 
     const startEditingMatch = (match) => {
         const code = prompt("Nhập mã xác nhận để chỉnh sửa:");
         if (code !== EDIT_MATCH_CODE) {
-            alert("Mã xác nhận không đúng!");
+            addToast("Mã xác nhận không đúng!", "error");
             return;
         }
 
@@ -471,7 +532,7 @@ function App() {
     const saveEditedMatch = async () => {
         if (!editingMatchId) return;
         if (editingMatchScore1 === "" || editingMatchScore2 === "") {
-            alert("Vui lòng nhập đầy đủ điểm");
+            addToast("Vui lòng nhập đầy đủ điểm", "warning");
             return;
         }
 
@@ -479,7 +540,7 @@ function App() {
         const s2 = Number(editingMatchScore2);
 
         if (!Number.isFinite(s1) || !Number.isFinite(s2) || s1 === s2) {
-            alert("Điểm không hợp lệ (không được hòa)");
+            addToast("Điểm không hợp lệ (không được hòa)", "warning");
             return;
         }
 
@@ -488,13 +549,13 @@ function App() {
         try {
             const maxPerTeam = editingMatchType === "singles" ? 1 : 2;
             if (editingMatchTeam1.length !== maxPerTeam || editingMatchTeam2.length !== maxPerTeam) {
-                alert(`Mỗi đội cần ${maxPerTeam} người chơi`);
+                addToast(`Mỗi đội cần ${maxPerTeam} người chơi`, "warning");
                 return;
             }
 
             const allPlayers = [...editingMatchTeam1, ...editingMatchTeam2];
             if (new Set(allPlayers).size !== allPlayers.length) {
-                alert("Một người không thể ở cả hai đội");
+                addToast("Một người không thể ở cả hai đội", "warning");
                 return;
             }
 
@@ -534,18 +595,20 @@ function App() {
 
             setMatches(matchesWithMeta);
             cancelEditingMatch();
-            alert("Đã cập nhật lịch sử đấu và làm mới meta");
+            addToast("Đã cập nhật lịch sử đấu và làm mới meta", "success");
         } catch (err) {
             console.error(err);
-            alert("Không thể cập nhật lịch sử đấu. Vui lòng thử lại");
+            addToast("Không thể cập nhật lịch sử đấu. Vui lòng thử lại", "error");
         } finally {
             setIsUpdatingMatches(false);
         }
     };
 
-    const rankingData = calculateRanking();
-    const playerFilterOptions = [...players].sort((a, b) =>
-        a.name.localeCompare(b.name, "vi", { sensitivity: "base" })
+    const rankingData = useMemo(() => calculateRanking(), [players, matches]);
+    const playerFilterOptions = useMemo(() => 
+        [...players].sort((a, b) =>
+            a.name.localeCompare(b.name, "vi", { sensitivity: "base" })
+        ), [players]
     );
     const playerFilterId = historyPlayerFilter === "all" ? null : historyPlayerFilter;
     const startDateFilter = historyStartDate
@@ -558,14 +621,29 @@ function App() {
         if (targetId == null) return true;
         return (teamPlayers || []).some((id) => String(id) === String(targetId));
     };
-    const filteredMatches = matches.filter((match) => {
+    const filteredMatches = useMemo(() => matches.filter((match) => {
         const typeMatch = historyFilter === "all" ? true : match.type === historyFilter;
         const playerMatch = hasPlayerInTeam(match.team1, playerFilterId) || hasPlayerInTeam(match.team2, playerFilterId);
         const matchDate = new Date(match.date);
         const afterStart = startDateFilter ? matchDate >= startDateFilter : true;
         const beforeEnd = endDateFilter ? matchDate <= endDateFilter : true;
         return typeMatch && playerMatch && afterStart && beforeEnd;
-    });
+    }), [matches, historyFilter, playerFilterId, startDateFilter, endDateFilter]);
+
+    // Pagination state
+    const [historyPage, setHistoryPage] = useState(1);
+    const MATCHES_PER_PAGE = 10;
+    const totalPages = Math.ceil(filteredMatches.length / MATCHES_PER_PAGE);
+    const paginatedMatches = useMemo(() => {
+        const reversed = [...filteredMatches].reverse();
+        const start = (historyPage - 1) * MATCHES_PER_PAGE;
+        return reversed.slice(start, start + MATCHES_PER_PAGE);
+    }, [filteredMatches, historyPage]);
+
+    // Reset page when filters change
+    useEffect(() => {
+        setHistoryPage(1);
+    }, [historyFilter, historyPlayerFilter, historyStartDate, historyEndDate]);
 
     /* =======================
        RENDER
@@ -600,10 +678,20 @@ function App() {
             {/* ---- CONTENT ---- */}
             <main className="main-content">
                 {!isLoaded && (
-                    <div className="loading-state">
-                        <div className="loading-spinner" />
-                        <p>Đang tải dữ liệu...</p>
-                    </div>
+                    <section className="section">
+                        {activeTab === "ranking" && <SkeletonRanking count={5} />}
+                        {activeTab === "history" && (
+                            <>
+                                <SkeletonCard />
+                                <SkeletonCard />
+                                <SkeletonCard />
+                            </>
+                        )}
+                        {(activeTab === "players" || activeTab === "config") && (
+                            <SkeletonTable rows={5} columns={3} />
+                        )}
+                        {activeTab === "createMatch" && <SkeletonCard />}
+                    </section>
                 )}
 
                 {isLoaded && (
@@ -788,6 +876,11 @@ function App() {
                             </div>
                         </div>
 
+                        {/* Hiển thị lỗi validation */}
+                        {scoreError && (
+                            <div className="validation-error" style={{ marginTop: 12 }}>{scoreError}</div>
+                        )}
+
                         {/* Chọn đội thắng và lưu trận */}
                         <div
                             className="result-buttons"
@@ -802,8 +895,9 @@ function App() {
                             <button
                                 className="btn btn-primary"
                                 onClick={() => createMatch()}
+                                disabled={isCreatingMatch}
                             >
-                                Lưu kết quả trận đấu
+                                {isCreatingMatch ? "Đang lưu..." : "Lưu kết quả trận đấu"}
                             </button>
                         </div>
                     </section>
@@ -818,23 +912,29 @@ function App() {
                         <div className="add-player-form">
                             <input
                                 type="text"
-                                className="input-field"
+                                className={`input-field ${playerNameError ? 'error' : ''}`}
                                 value={newPlayerName}
-                                onChange={(e) =>
-                                    setNewPlayerName(e.target.value)
-                                }
+                                onChange={(e) => {
+                                    setNewPlayerName(e.target.value);
+                                    if (playerNameError) setPlayerNameError("");
+                                }}
                                 onKeyPress={(e) =>
-                                    e.key === "Enter" && addPlayer()
+                                    e.key === "Enter" && !isAddingPlayer && addPlayer()
                                 }
                                 placeholder="Nhập tên..."
+                                disabled={isAddingPlayer}
                             />
                             <button
                                 className="btn btn-primary"
                                 onClick={addPlayer}
+                                disabled={isAddingPlayer}
                             >
-                                Thêm
+                                {isAddingPlayer ? "Đang thêm..." : "Thêm"}
                             </button>
                         </div>
+                        {playerNameError && (
+                            <div className="validation-error">{playerNameError}</div>
+                        )}
 
                         {/* Danh sách người chơi hiện tại */}
                         {players.length === 0 ? (
@@ -993,10 +1093,9 @@ function App() {
                         ) : filteredMatches.length === 0 ? (
                             <div className="empty-state">Không có trận đấu phù hợp</div>
                         ) : (
+                            <>
                             <div className="history-list">
-                                {filteredMatches
-                                    .slice()
-                                    .reverse()
+                                {paginatedMatches
                                     .map((match) => (
                                         <div
                                             key={match.id}
@@ -1225,6 +1324,38 @@ function App() {
                                         </div>
                                     ))}
                             </div>
+                            {/* Pagination controls */}
+                            {totalPages > 1 && (
+                                <div className="pagination" style={{
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    marginTop: 16,
+                                    flexWrap: 'wrap'
+                                }}>
+                                    <button
+                                        className="btn"
+                                        onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                                        disabled={historyPage === 1}
+                                        style={{ padding: '8px 12px' }}
+                                    >
+                                        ← Trước
+                                    </button>
+                                    <span style={{ fontSize: 14, color: '#64748b' }}>
+                                        Trang {historyPage} / {totalPages} ({filteredMatches.length} trận)
+                                    </span>
+                                    <button
+                                        className="btn"
+                                        onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={historyPage === totalPages}
+                                        style={{ padding: '8px 12px' }}
+                                    >
+                                        Sau →
+                                    </button>
+                                </div>
+                            )}
+                            </>
                         )}
                     </section>
                 )}
@@ -1366,9 +1497,9 @@ function App() {
                                         const { data: scoreConfigData, error: selError } = await supabase.from("scoreconfig").select("*");
                                         if (selError) throw selError;
                                         setScoreConfig(scoreConfigData || []);
-                                        alert("Đã lưu cấu hình vào Supabase");
+                                        addToast("Đã lưu cấu hình vào Supabase", "success");
                                     } catch (err) {
-                                        alert("Lỗi cập nhật Supabase: " + (err.message || err));
+                                        addToast("Lỗi cập nhật Supabase: " + (err.message || err), "error");
                                     }
                                 }}
                             >

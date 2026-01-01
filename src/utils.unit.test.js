@@ -36,6 +36,6 @@ describe('calcPointDelta', () => {
 describe('formatDateLocal', () => {
   it('trả về đúng định dạng', () => {
     const iso = '2025-01-01T10:30:00.000Z';
-    expect(formatDateLocal(iso)).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+    expect(formatDateLocal(iso)).toMatch(/\d{2}:\d{2} \d{2}\/\d{2}\/\d{4}/);
   });
 });
