@@ -1,137 +1,141 @@
+# 🏸 Badminton Legend AllianceITSC
 
-# 🏸 Badminton League Tracker – Legend Alliance
+**Badminton Legend AllianceITSC** là ứng dụng web quản lý giải cầu lông nội bộ, thiết kế mobile-first, cho phép theo dõi bảng xếp hạng, tạo trận đấu và xem lịch sử thi đấu với dữ liệu lưu trữ trên Supabase.
 
-**Badminton League Tracker** là ứng dụng web quản lý giải cầu lông, ưu tiên trải nghiệm di động, cho phép nhiều người dùng tạo trận đấu, theo dõi bảng xếp hạng, và chia sẻ dữ liệu thời gian thực qua Google Sheets (serverless backend).
+## 🎯 Tính Năng Chính
 
-## 🎯 Tính Năng Nổi Bật
+### Quản lý người chơi
+- Thêm/xóa/sửa tên người chơi
+- Không thể xóa người chơi đã có lịch sử thi đấu
+- Danh sách được sắp xếp theo alphabet
 
-- **Quản lý người chơi:** Thêm/xóa người chơi (không xóa được nếu đã có lịch sử thi đấu), danh sách dùng chung cho mọi người.
-- **Tạo trận đấu:** Hỗ trợ trận đơn (1 vs 1) và đôi (2 vs 2), nhập điểm thực tế, tự động xác định đội thắng, mỗi trận lưu snapshot điểm số tại thời điểm tạo.
-- **Bảng xếp hạng:** Tính toán từ lịch sử trận đấu, mỗi trận lưu lại thông tin snapshot (điểm trước trận, chênh lệch, hệ số chia, delta điểm), thay đổi quy tắc không ảnh hưởng trận cũ. **Điểm cộng cho đội thắng dựa trên chênh lệch tổng điểm thành viên hai đội trước trận, không dựa vào kết quả trận đấu.**
-- **Lịch sử trận đấu:** Lưu loại trận, thành viên, điểm số, đội thắng, thời gian (UTC, hiển thị theo múi giờ máy người dùng).
-- **Cấu hình tính điểm:** Tùy chỉnh quy tắc chia điểm (max chênh lệch, divisor), chỉ áp dụng cho trận mới.
-- **Chia sẻ dữ liệu:** Không dùng localStorage, mọi dữ liệu lưu trên Google Sheets, mọi người cùng xem/chỉnh sửa, không cần backend truyền thống.
+### Tạo trận đấu
+- Hỗ trợ trận đơn (1v1) và đôi (2v2)
+- Nhập điểm thực tế, tự động xác định đội thắng
+- Mặc định chọn trận đôi
+- Lưu snapshot điểm số tại thời điểm tạo trận
 
-## 🛠 Công Nghệ Sử Dụng
+### Bảng xếp hạng
+- Tính toán điểm từ lịch sử trận đấu
+- Hiển thị: số trận, số thắng, tỷ lệ % thắng
+- Điểm cộng/trừ dựa trên chênh lệch điểm số trận đấu
 
-- **Frontend:** React + Vite (UI hiện đại, mobile-first, responsive)
-- **Backend:** Google Apps Script (API serverless)
-- **Database:** Google Sheets
-- **Triển khai:** Vercel
+### Lịch sử trận đấu
+- Lọc theo: loại trận (đơn/đôi), người chơi, khoảng thời gian
+- Chỉnh sửa lịch sử đấu (yêu cầu mã xác nhận)
+- Khi chỉnh sửa: có thể thay đổi điểm số, thay đổi người chơi
+- Tự động tính lại meta cho toàn bộ trận sau khi cập nhật
 
-## 🌈 Thiết Kế UI/UX
+### Cấu hình tính điểm
+- Tùy chỉnh quy tắc chia điểm (chênh lệch tối đa, hệ số chia)
+- Chỉ áp dụng cho trận mới
 
-- Layout mobile-first, max-width 960px, căn giữa, màu sắc tươi sáng, accent xanh dương (#2563eb).
-- Các màn hình: Header, Navigation Tabs, Xếp Hạng, Người Chơi, Tạo Trận Đấu, Lịch Sử, Cấu Hình.
-- Xem chi tiết tại [UI_DESIGN.md](UI_DESIGN.md).
+## 🛠 Công Nghệ
+
+| Thành phần | Công nghệ |
+|------------|-----------|
+| Frontend | React + Vite |
+| Database | Supabase (PostgreSQL) |
+| Hosting | Vercel |
+| Styling | CSS thuần (mobile-first) |
 
 ## 🚀 Demo
 
 https://badminton-league-tracker.vercel.app/
 
-## ⚙️ Hướng Dẫn Cài Đặt & Phát Triển
+## ⚙️ Cài Đặt & Phát Triển
 
-1. **Clone repo:**
-   ```sh
-   git clone https://github.com/mhung2026/BadmintonLeagueTracker.git
-   cd BadmintonLeagueTracker
-   ```
-2. **Cài đặt dependencies:**
-   ```sh
-   npm install
-   ```
-3. **Chạy local:**
-   ```sh
-   npm run dev
-   ```
-   Truy cập: http://localhost:5173
-
-### 🔌 Kết nối Google Sheets
-
-1. **Tạo Google Apps Script:**
-   - Tạo project mới, dán code trong [AppscriptCode.gs](AppscriptCode.gs).
-   - Deploy as Web App:
-     - Execute as: Me
-     - Who has access: Anyone
-2. **Cấu hình API URL:**
-   - Trong `src/App.jsx`, sửa biến:
-     ```js
-     const API_URL = "https://script.google.com/macros/s/XXXX/exec";
-     ```
-
-## 📄 Cấu Trúc Dữ Liệu
-
-**Player**
-```json
-{
-  "id": "uuid-string",
-  "name": "Tên người chơi"
-}
-```
-**Match**
-```json
-{
-  "id": "uuid-string",
-  "type": "singles | doubles",
-  "team1": ["playerId1"],
-  "team2": ["playerId2"],
-  "score1": 21,
-  "score2": 15,
-  "winner": 1,
-  "date": "2025-01-01T10:30:00.000Z",
-  "meta": {
-    "team1PtsBefore": 12,
-    "team2PtsBefore": 8,
-    "ratingDiff": 4,
-    "divisorUsed": 2,
-    // "scoreDiff": 6, // (không còn dùng)
-    "pointDelta": 3 // Số điểm cộng cho đội thắng, tính bằng: Math.max(1, Math.round(Math.abs(team1PtsBefore - team2PtsBefore) / divisorUsed))
-  }
-}
+### 1. Clone repo
+```bash
+git clone https://github.com/mhung2026/BadmintonLeagueTracker.git
+cd BadmintonLeagueTracker
 ```
 
-## 🕒 Xử Lý Thời Gian
+### 2. Cài đặt dependencies
+```bash
+npm install
+```
 
-- Lưu trên Google Sheets: ISO 8601 (UTC)
-- Hiển thị UI: `new Date(date).toLocaleString()`
+### 3. Cấu hình môi trường
+Tạo file `.env` tại thư mục gốc:
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-## ⚠️ Giới Hạn
+### 4. Chạy local
+```bash
+npm run dev
+```
+Truy cập: http://localhost:5173
 
-- Không có xác thực (ai cũng sửa được)
-- Google Sheets không tối ưu cho concurrency cao
-- Không phù hợp cho giải đấu quy mô lớn
+### 5. Chạy tests
+```bash
+npm test
+```
 
+## 📊 Cấu Trúc Database (Supabase)
+
+### Bảng `players`
+| Cột | Kiểu | Mô tả |
+|-----|------|-------|
+| id | uuid | Primary key |
+| name | text | Tên người chơi |
+
+### Bảng `matches`
+| Cột | Kiểu | Mô tả |
+|-----|------|-------|
+| id | uuid | Primary key |
+| type | text | "singles" hoặc "doubles" |
+| team1 | uuid[] | Mảng ID người chơi đội 1 |
+| team2 | uuid[] | Mảng ID người chơi đội 2 |
+| score1 | int4 | Điểm đội 1 |
+| score2 | int4 | Điểm đội 2 |
+| winner | int4 | 1 hoặc 2 |
+| date | timestamptz | Thời gian tạo |
+| meta | jsonb | Thông tin snapshot |
+
+### Bảng `scoreconfig`
+| Cột | Kiểu | Mô tả |
+|-----|------|-------|
+| id | int8 | Primary key |
+| maxPointDiff | int4 | Chênh lệch điểm tối đa |
+| divisor | int4 | Hệ số chia |
 
 ## 📁 Cấu Trúc Thư Mục
 
 ```
-AppscriptCode.gs         # Backend Google Apps Script (cũ)
-README.md
-UI_DESIGN.md             # Thiết kế UI/UX chi tiết
-SECURITY.md
-docs/
-  SRS.md                 # Yêu cầu phần mềm
-  SUPABASE_GUIDE.md      # Hướng dẫn cấu hình Supabase
-public/                  # Static assets
-src/
-  App.jsx                # React main app
-  App.css                # CSS chính
-  main.jsx               # Entry point
-  supabaseClient.js      # Kết nối Supabase
-  assets/                # Hình ảnh, icon
+BadmintonLeagueTracker/
+├── public/
+│   └── favicon.png
+├── src/
+│   ├── App.jsx          # Component chính
+│   ├── App.css          # Styles
+│   ├── supabaseClient.js # Kết nối Supabase
+│   └── utils.js         # Hàm tiện ích
+├── docs/
+│   ├── SRS.md           # Tài liệu yêu cầu
+│   ├── SUPABASE_GUIDE.md # Hướng dẫn Supabase
+│   └── TESTCASE.md      # Test cases
+├── .env                 # Biến môi trường (không commit)
+├── index.html
+├── package.json
+└── vite.config.js
 ```
 
-## 🔗 Hướng dẫn sử dụng Supabase
+## 🔒 Bảo Mật
 
-Xem chi tiết tại [docs/SUPABASE_GUIDE.md](docs/SUPABASE_GUIDE.md)
+- Credentials Supabase được lưu trong biến môi trường
+- File `.env` không được commit lên git
+- Chỉnh sửa lịch sử đấu yêu cầu mã xác nhận
 
-## 👤 Tác Giả
+## 📖 Tài Liệu Thêm
 
-- **mhung2026**  
-- GitHub: https://github.com/mhung2026
+- [Hướng dẫn Supabase](docs/SUPABASE_GUIDE.md)
+- [Tài liệu yêu cầu (SRS)](docs/SRS.md)
+- [Test Cases](docs/TESTCASE.md)
+- [Chi tiết Test Cases](docs/TESTCASE_DETAIL.md)
 
+## 📝 License
 
-Bạn có thể dùng bản README này để thay thế hoặc bổ sung cho tài liệu hiện tại. Nếu cần bản tiếng Anh hoặc muốn bổ sung phần nào, hãy yêu cầu!
-    "team1PtsBefore": 12,
-
-    "team2PtsBefore": 8,
+MIT License
