@@ -615,9 +615,7 @@ function App() {
         if (!Array.isArray(players) || players.length < 2) return [];
         if (!Array.isArray(matches)) return [];
 
-        // recent matches to compute activity - prefer matches from the same local day
-        // (when the day rolls over, previous day's matches won't block players today)
-        // Fallback: if there are no same-day matches, use recent multi-day matches
+        // Only use matches from today (same local day)
         const isSameLocalDay = (iso) => {
             if (!iso) return false;
             const d = new Date(iso);
@@ -629,17 +627,9 @@ function App() {
             );
         };
 
-        const sameDayMatches = [...matches]
+        const recentMatches = [...matches]
             .filter(m => m && (m.team1 || m.team2) && isSameLocalDay(m.date))
-            .sort((a, b) => new Date(b.date) - new Date(a.date))
-            .slice(0, 30);
-
-        const recentMatches = sameDayMatches.length
-            ? sameDayMatches
-            : [...matches]
-                  .filter(m => m && (m.team1 || m.team2))
-                  .sort((a, b) => new Date(b.date) - new Date(a.date))
-                  .slice(0, 30);
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
 
         const playerRecentCount = {};
         players.forEach(p => { playerRecentCount[p.id] = 0; });
