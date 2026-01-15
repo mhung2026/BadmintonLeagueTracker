@@ -67,24 +67,32 @@ function App() {
         return getDivisorByPointDiffUtil(diff, scoreConfig);
     };
 
-    // Compute applied delta based on rating diff and config rules:
-    // - baseDelta = calcPointDelta(ratingDiff, divisor)
-    // - if the higher-rated team wins -> reduce (divide) the base delta
-    // - if the lower-rated team wins -> amplify (multiply) the base delta
-    const computeAppliedDelta = (winnerTeam, team1PtsBefore, team2PtsBefore) => {
+    // Compute applied delta based on score diff and rating comparison:
+    // Công thức: Điểm cộng/trừ = (cách biệt tỉ số) * hoặc / hệ số
+    // - Nếu đội thắng có rating cao hơn: chia hệ số (thưởng ít)
+    // - Nếu đội thắng có rating thấp hơn: nhân hệ số (thưởng nhiều)
+    // - Nếu rating bằng nhau: không nhân/chia
+    const computeAppliedDelta = (winnerTeam, team1PtsBefore, team2PtsBefore, scoreDiff) => {
         const ratingDiff = Math.abs(team1PtsBefore - team2PtsBefore);
         const divisorUsed = getDivisorByPointDiff(ratingDiff);
-        const baseDelta = calcPointDeltaUtil(team1PtsBefore, team2PtsBefore, divisorUsed);
 
+        // baseDelta = cách biệt tỉ số (không chia gì cả ở đây)
+        const baseDelta = Math.max(1, scoreDiff);
+
+        // Nếu rating bằng nhau
         if (team1PtsBefore === team2PtsBefore) {
             return { appliedDelta: baseDelta, baseDelta, divisorUsed };
         }
 
-        const higherTeam = team1PtsBefore > team2PtsBefore ? 1 : 2;
+        // Xác định đội nào có rating cao hơn
+        const higherRatedTeam = team1PtsBefore > team2PtsBefore ? 1 : 2;
         let appliedDelta;
-        if (winnerTeam === higherTeam) {
+
+        if (winnerTeam === higherRatedTeam) {
+            // Đội rating cao thắng -> chia hệ số (giảm thưởng)
             appliedDelta = Math.max(1, Math.round(baseDelta / Math.max(divisorUsed, 1)));
         } else {
+            // Đội rating thấp thắng -> nhân hệ số (tăng thưởng)
             appliedDelta = baseDelta * Math.max(divisorUsed, 1);
         }
 
@@ -101,13 +109,22 @@ function App() {
             console.error("Không thể tải danh sách người chơi", error);
             return [];
         }
-        // normalize disabled flag for compatibility
-        setPlayers((data || []).map(p => ({ ...p, disabled: !!p.disabled })));
+        // normalize all fields for compatibility
+        setPlayers((data || []).map(p => ({
+            ...p,
+            disabled: !!p.disabled,
+            current_points: p.current_points ?? 0,
+            total_matches: p.total_matches ?? 0,
+            wins: p.wins ?? 0
+        })));
         return data || [];
     }, []);
 
     const fetchMatches = useCallback(async () => {
-        const { data, error } = await supabase.from("matches").select("*");
+        const { data, error } = await supabase
+            .from("matches")
+            .select("*")
+            .order('date', { ascending: false }); // Trận mới nhất trước
         if (error) {
             console.error("Không thể tải lịch sử trận đấu", error);
             return [];
@@ -394,7 +411,12 @@ function App() {
         const scoreDiff = Math.abs(s1 - s2);
 
         const winner = s1 > s2 ? 1 : 2;
-        const { appliedDelta: pointDelta, baseDelta, divisorUsed } = computeAppliedDelta(winner, team1PtsBefore, team2PtsBefore);
+        const { appliedDelta: pointDelta, baseDelta, divisorUsed } = computeAppliedDelta(winner, team1PtsBefore, team2PtsBefore, scoreDiff);
+
+        // Tính điểm sau trận
+        const loser = winner === 1 ? 2 : 1;
+        const team1PtsAfter = winner === 1 ? team1PtsBefore + pointDelta : team1PtsBefore - pointDelta;
+        const team2PtsAfter = winner === 2 ? team2PtsBefore + pointDelta : team2PtsBefore - pointDelta;
 
         const newMatch = {
             type: matchType,
@@ -407,6 +429,8 @@ function App() {
             meta: {
                 team1PtsBefore,
                 team2PtsBefore,
+                team1PtsAfter,
+                team2PtsAfter,
                 ratingDiff,
                 scoreDiff,
                 divisorUsed,
@@ -421,7 +445,13 @@ function App() {
                 .insert([newMatch]);
             if (error) throw error;
 
+            // Update stats (points, matches, wins) for all players in this match
+            await updatePlayerStats(team1.players, pointDelta, winner === 1);
+            await updatePlayerStats(team2.players, pointDelta, winner === 2);
+
             await fetchMatches();
+            await fetchPlayers(); // Reload players to get updated stats
+
             try {
                 // immediately recompute suggestions using the fresh data
                 setSuggestedMatchesState(suggestNextMatches());
@@ -497,6 +527,84 @@ function App() {
         return Object.values(ranking).sort((a, b) => b.points - a.points);
     };
 
+    // Get ranking directly from players table (fast, no calculation)
+    const getRankingFromPlayers = useCallback(() => {
+        return players
+            .filter(p => !p.disabled)
+            .map(p => ({
+                id: p.id,
+                name: p.name,
+                points: p.current_points ?? 0,
+                totalMatches: p.total_matches ?? 0,
+                wins: p.wins ?? 0
+            }))
+            .sort((a, b) => b.points - a.points);
+    }, [players]);
+
+    // Sync current_points, total_matches, and wins from matches to players table
+    const syncPointsToPlayers = useCallback(async () => {
+        try {
+            // Calculate ranking from matches (includes points, totalMatches, wins)
+            const ranking = calculateRanking(true);
+
+            // Update each player's stats
+            const updates = [];
+            for (const [playerId, data] of Object.entries(ranking)) {
+                updates.push(
+                    supabase
+                        .from('players')
+                        .update({
+                            current_points: data.points,
+                            total_matches: data.totalMatches,
+                            wins: data.wins
+                        })
+                        .eq('id', playerId)
+                );
+            }
+
+            await Promise.all(updates);
+
+            // Reload players
+            await fetchPlayers();
+
+            return true;
+        } catch (err) {
+            console.error('Lỗi sync điểm:', err);
+            return false;
+        }
+    }, [calculateRanking, fetchPlayers]);
+
+    // Update current_points, total_matches, and wins for specific players after a match
+    const updatePlayerStats = useCallback(async (playerIds, pointDelta, isWinner) => {
+        try {
+            const updates = [];
+            for (const playerId of playerIds) {
+                const player = players.find(p => p.id === playerId);
+                if (!player) continue;
+
+                const currentPoints = player.current_points ?? 0;
+                const newPoints = isWinner ? currentPoints + pointDelta : currentPoints - pointDelta;
+                const newTotalMatches = (player.total_matches ?? 0) + 1;
+                const newWins = (player.wins ?? 0) + (isWinner ? 1 : 0);
+
+                updates.push(
+                    supabase
+                        .from('players')
+                        .update({
+                            current_points: newPoints,
+                            total_matches: newTotalMatches,
+                            wins: newWins
+                        })
+                        .eq('id', playerId)
+                );
+            }
+
+            await Promise.all(updates);
+        } catch (err) {
+            console.error('Lỗi cập nhật stats người chơi:', err);
+        }
+    }, [players]);
+
     /* =======================
        GỢI Ý CẶP ĐẤU TIẾP THEO
        - Ưu tiên: không để 1 người đánh 2 trận liên tiếp (hai trận gợi ý phải tách biệt người chơi)
@@ -539,6 +647,20 @@ function App() {
             [...(m.team1 || []), ...(m.team2 || [])].forEach(pid => {
                 if (playerRecentCount[pid] !== undefined) playerRecentCount[pid]++;
             });
+        });
+
+        // Track matchup frequency: count how many times each pair of teams has played
+        const matchupCount = {};
+        const getMatchupKey = (team1Ids, team2Ids) => {
+            const t1 = [...team1Ids].sort().join(',');
+            const t2 = [...team2Ids].sort().join(',');
+            return [t1, t2].sort().join(' vs ');
+        };
+        recentMatches.forEach(m => {
+            if (m.team1 && m.team2) {
+                const key = getMatchupKey(m.team1, m.team2);
+                matchupCount[key] = (matchupCount[key] || 0) + 1;
+            }
         });
 
         // pool sorted by least recently played
@@ -592,7 +714,16 @@ function App() {
                                     const pd = rankingSnapshot[d]?.points ?? 0;
                                     const diff1 = Math.abs(pa - pb);
                                     const diff2 = Math.abs(pc - pd);
-                                    const score = diff1 + diff2;
+
+                                    // Check matchup frequency for both singles matches
+                                    const matchup1Key = getMatchupKey([a], [b]);
+                                    const matchup2Key = getMatchupKey([c], [d]);
+                                    const matchup1Count = matchupCount[matchup1Key] || 0;
+                                    const matchup2Count = matchupCount[matchup2Key] || 0;
+
+                                    // Score with penalty for repeated matchups
+                                    const score = diff1 + diff2 + (matchup1Count * 100) + (matchup2Count * 100);
+
                                     if (!best || score < best.score) {
                                         best = {
                                             score,
@@ -626,7 +757,16 @@ function App() {
                     const pd = rankingSnapshot[d]?.points ?? 0;
                     const diff1 = Math.abs(pa - pb);
                     const diff2 = Math.abs(pc - pd);
-                    const score = diff1 + diff2;
+
+                    // Check matchup frequency
+                    const matchup1Key = getMatchupKey([a], [b]);
+                    const matchup2Key = getMatchupKey([c], [d]);
+                    const matchup1Count = matchupCount[matchup1Key] || 0;
+                    const matchup2Count = matchupCount[matchup2Key] || 0;
+
+                    // Score with penalty
+                    const score = diff1 + diff2 + (matchup1Count * 100) + (matchup2Count * 100);
+
                     if (!best || score < best.score) {
                         best = {
                             score,
@@ -682,11 +822,27 @@ function App() {
                                 const t1a = sumTeamPoints(p1[0]);
                                 const t1b = sumTeamPoints(p1[1]);
                                 const diff1 = Math.abs((t1a || 0) - (t1b || 0));
+
+                                // Get matchup frequency for match 1
+                                const team1Ids = p1[0].map(p => p.id);
+                                const team2Ids = p1[1].map(p => p.id);
+                                const matchup1Key = getMatchupKey(team1Ids, team2Ids);
+                                const matchup1Count = matchupCount[matchup1Key] || 0;
+
                                 for (const p2 of p2Options) {
                                     const t2a = sumTeamPoints(p2[0]);
                                     const t2b = sumTeamPoints(p2[1]);
                                     const diff2 = Math.abs((t2a || 0) - (t2b || 0));
-                                    const score = diff1 + diff2; // minimize total difference
+
+                                    // Get matchup frequency for match 2
+                                    const team3Ids = p2[0].map(p => p.id);
+                                    const team4Ids = p2[1].map(p => p.id);
+                                    const matchup2Key = getMatchupKey(team3Ids, team4Ids);
+                                    const matchup2Count = matchupCount[matchup2Key] || 0;
+
+                                    // Score = rating difference + heavy penalty for repeated matchups
+                                    const score = diff1 + diff2 + (matchup1Count * 100) + (matchup2Count * 100);
+
                                     if (!best || score < best.score) {
                                         best = {
                                             score,
@@ -719,7 +875,19 @@ function App() {
                 const a = sumTeamPoints(p[0]);
                 const b = sumTeamPoints(p[1]);
                 const diff = Math.abs((a || 0) - (b || 0));
-                if (!best || diff < best.diff) best = { diff, match: { team1: p[0], team2: p[1] } };
+
+                // Check matchup frequency
+                const team1Ids = p[0].map(pl => pl.id);
+                const team2Ids = p[1].map(pl => pl.id);
+                const matchupKey = getMatchupKey(team1Ids, team2Ids);
+                const matchupFreq = matchupCount[matchupKey] || 0;
+
+                // Score: rating diff + heavy penalty for repeated matchups
+                const score = diff + (matchupFreq * 100);
+
+                if (!best || score < best.score) {
+                    best = { score, match: { team1: p[0], team2: p[1] } };
+                }
             }
             if (best) {
                 const matchesOut = [best.match];
@@ -880,7 +1048,22 @@ function App() {
             const scoreDiff = Math.abs(score1 - score2);
             const winner = score1 > score2 ? 1 : 2;
             const loser = winner === 1 ? 2 : 1;
-            const { appliedDelta: pointDelta, baseDelta, divisorUsed } = computeAppliedDelta(winner, team1PtsBefore, team2PtsBefore);
+            const { appliedDelta: pointDelta, baseDelta, divisorUsed } = computeAppliedDelta(winner, team1PtsBefore, team2PtsBefore, scoreDiff);
+
+            // Cập nhật ranking sau trận
+            (match[`team${winner}`] || []).forEach((pid) => {
+                if (!rankingMap[pid]) rankingMap[pid] = { points: 0 };
+                rankingMap[pid].points += pointDelta;
+            });
+
+            (match[`team${loser}`] || []).forEach((pid) => {
+                if (!rankingMap[pid]) rankingMap[pid] = { points: 0 };
+                rankingMap[pid].points -= pointDelta;
+            });
+
+            // Tính điểm sau trận
+            const team1PtsAfter = getTeamPoints(match.team1, rankingMap);
+            const team2PtsAfter = getTeamPoints(match.team2, rankingMap);
 
             const updatedMatch = {
                 ...match,
@@ -890,6 +1073,8 @@ function App() {
                 meta: {
                     team1PtsBefore,
                     team2PtsBefore,
+                    team1PtsAfter,
+                    team2PtsAfter,
                     ratingDiff,
                     scoreDiff,
                     divisorUsed,
@@ -897,16 +1082,6 @@ function App() {
                     baseDelta,
                 },
             };
-
-            (updatedMatch[`team${winner}`] || []).forEach((pid) => {
-                if (!rankingMap[pid]) rankingMap[pid] = { points: 0 };
-                rankingMap[pid].points += pointDelta;
-            });
-
-            (updatedMatch[`team${loser}`] || []).forEach((pid) => {
-                if (!rankingMap[pid]) rankingMap[pid] = { points: 0 };
-                rankingMap[pid].points -= pointDelta;
-            });
 
             return updatedMatch;
         });
@@ -993,7 +1168,55 @@ function App() {
         }
     };
 
-    const rankingData = useMemo(() => calculateRanking(), [players, matches]);
+    const recalculateAllMatches = async () => {
+        if (!matches || matches.length === 0) {
+            addToast("Không có trận đấu nào để tính lại", "warning");
+            return;
+        }
+
+        setIsUpdatingMatches(true);
+
+        try {
+            // Tính lại toàn bộ meta cho tất cả trận đấu
+            const matchesWithMeta = recomputeMatchesWithMeta(matches);
+
+            // Chuẩn bị payload để update
+            const payload = matchesWithMeta.map((match) => ({
+                id: match.id,
+                type: match.type,
+                team1: match.team1,
+                team2: match.team2,
+                score1: match.score1,
+                score2: match.score2,
+                winner: match.winner,
+                date: match.date,
+                meta: match.meta,
+            }));
+
+            // Cập nhật toàn bộ vào database
+            const { error } = await supabase
+                .from("matches")
+                .upsert(payload);
+
+            if (error) throw error;
+
+            // Cập nhật state
+            setMatches(matchesWithMeta);
+
+            // Sync điểm về players table
+            await syncPointsToPlayers();
+
+            addToast(`Đã tính lại ${matchesWithMeta.length} trận đấu và sync điểm thành công!`, "success");
+        } catch (err) {
+            console.error(err);
+            addToast("Lỗi khi tính lại database: " + (err.message || err), "error");
+        } finally {
+            setIsUpdatingMatches(false);
+        }
+    };
+
+    // Use current_points from players for fast ranking display
+    const rankingData = useMemo(() => getRankingFromPlayers(), [getRankingFromPlayers]);
     const playerFilterOptions = useMemo(() =>
         [...players].sort((a, b) =>
             a.name.localeCompare(b.name, "vi", { sensitivity: "base" })
@@ -1024,9 +1247,9 @@ function App() {
     const MATCHES_PER_PAGE = 10;
     const totalPages = Math.ceil(filteredMatches.length / MATCHES_PER_PAGE);
     const paginatedMatches = useMemo(() => {
-        const reversed = [...filteredMatches].reverse();
+        // Matches đã được sắp xếp mới nhất trước từ database
         const start = (historyPage - 1) * MATCHES_PER_PAGE;
-        return reversed.slice(start, start + MATCHES_PER_PAGE);
+        return filteredMatches.slice(start, start + MATCHES_PER_PAGE);
     }, [filteredMatches, historyPage]);
 
     // Reset page when filters change
@@ -2028,6 +2251,21 @@ function App() {
                                         })}
                                     >
                                         Lưu cấu hình
+                                    </button>
+
+                                    <button
+                                        className="btn btn-danger"
+                                        style={{ marginLeft: 8 }}
+                                        onClick={() => openAuthModal('⚠️ TÍNH LẠI TOÀN BỘ DATABASE - Nhập mã xác nhận:', async (code) => {
+                                            if (!isAuthValid(code)) {
+                                                addToast('Mã xác nhận không đúng!', 'error');
+                                                return;
+                                            }
+                                            await recalculateAllMatches();
+                                        })}
+                                        disabled={isUpdatingMatches}
+                                    >
+                                        {isUpdatingMatches ? 'Đang tính lại...' : '🔄 Tính lại toàn bộ database'}
                                     </button>
                                 </div>
 
