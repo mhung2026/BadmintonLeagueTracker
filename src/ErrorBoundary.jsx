@@ -26,7 +26,7 @@ class ErrorBoundary extends Component {
           color: '#991b1b'
         }}>
           <h2>Đã xảy ra lỗi</h2>
-          <p>Vui lòng tải lại trang hoặc liên hệ hỗ trợ.</p>
+          <p>Vui lòng tải lại trang hoặc liên hệ HungNM để được hỗ trợ.</p>
           <button
             onClick={() => window.location.reload()}
             style={{

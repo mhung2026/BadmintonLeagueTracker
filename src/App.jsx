@@ -32,6 +32,9 @@ function App() {
     const [historyStartDate, setHistoryStartDate] = useState("");
     const [historyEndDate, setHistoryEndDate] = useState("");
 
+    // Chart states
+    const [chartPlayerIds, setChartPlayerIds] = useState([]);
+
     const [team1, setTeam1] = useState({ players: [] });
     const [team2, setTeam2] = useState({ players: [] });
 
@@ -527,6 +530,72 @@ function App() {
         return Object.values(ranking).sort((a, b) => b.points - a.points);
     };
 
+    // Calculate point timeline for chart
+    const calculatePointTimeline = useCallback((playerIds) => {
+        if (!playerIds || playerIds.length === 0) return [];
+
+        // Initialize data structure
+        const playerData = {};
+        playerIds.forEach(pid => {
+            const player = players.find(p => p.id === pid);
+            if (player) {
+                playerData[pid] = {
+                    name: player.name,
+                    points: [{ date: null, points: 0 }] // Start from 0
+                };
+            }
+        });
+
+        // Sort matches by date
+        const sortedMatches = [...matches].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Calculate points over time
+        const currentPoints = {};
+        playerIds.forEach(pid => currentPoints[pid] = 0);
+
+        sortedMatches.forEach((match) => {
+            if (!match.meta?.pointDelta) return;
+
+            const delta = match.meta.pointDelta;
+            const winnerTeam = match.winner;
+            const loserTeam = winnerTeam === 1 ? 2 : 1;
+            const matchDate = new Date(match.date);
+
+            // Track if any selected player was in this match
+            let hasSelectedPlayer = false;
+
+            // Update winner points
+            match[`team${winnerTeam}`].forEach((pid) => {
+                if (playerIds.includes(pid)) {
+                    hasSelectedPlayer = true;
+                    currentPoints[pid] += delta;
+                }
+            });
+
+            // Update loser points
+            match[`team${loserTeam}`].forEach((pid) => {
+                if (playerIds.includes(pid)) {
+                    hasSelectedPlayer = true;
+                    currentPoints[pid] -= delta;
+                }
+            });
+
+            // Add data point if any selected player participated
+            if (hasSelectedPlayer) {
+                playerIds.forEach(pid => {
+                    if (playerData[pid]) {
+                        playerData[pid].points.push({
+                            date: matchDate,
+                            points: currentPoints[pid]
+                        });
+                    }
+                });
+            }
+        });
+
+        return Object.keys(playerData).map(pid => playerData[pid]);
+    }, [players, matches]);
+
     // Get ranking directly from players table (fast, no calculation)
     const getRankingFromPlayers = useCallback(() => {
         return players
@@ -670,109 +739,49 @@ function App() {
 
         const sumTeamPoints = (teamPlayers) => getTeamPoints(teamPlayers.map(p => (p && p.id) ? p.id : p), rankingSnapshot);
 
-        // If user requested singles, generate single-player match suggestions
+        // If user requested singles, generate top 3 single-player match options
         if (matchType === 'singles') {
-            // helper: pair 4 players into two 1v1 matches (three unique ways)
-            const pairingsForSingles = (arr) => {
-                const [a, b, c, d] = arr;
-                return [
-                    [[a], [b], [c], [d]],
-                    [[a], [c], [b], [d]],
-                    [[a], [d], [b], [c]],
-                ];
-            };
+            const suggestions = [];
 
-            // Prefer searching within top8 least-recently-played to satisfy activity constraint
-            if (pool.length >= 8) {
-                const top8 = pool.slice(0, 8);
-                let best = null;
-                for (let i0 = 0; i0 < 5; i0++) {
-                    for (let i1 = i0 + 1; i1 < 6; i1++) {
-                        for (let i2 = i1 + 1; i2 < 7; i2++) {
-                            for (let i3 = i2 + 1; i3 < 8; i3++) {
-                                const idx1 = [i0, i1, i2, i3];
-                                const group = idx1.map(i => top8[i]);
-                                const options = pairingsForSingles(group);
-                                for (const opt of options) {
-                                    const a = opt[0][0].id;
-                                    const b = opt[1][0].id;
-                                    const c = opt[2][0].id;
-                                    const d = opt[3][0].id;
-                                    const pa = rankingSnapshot[a]?.points ?? 0;
-                                    const pb = rankingSnapshot[b]?.points ?? 0;
-                                    const pc = rankingSnapshot[c]?.points ?? 0;
-                                    const pd = rankingSnapshot[d]?.points ?? 0;
-                                    const diff1 = Math.abs(pa - pb);
-                                    const diff2 = Math.abs(pc - pd);
-
-                                    // Check matchup frequency for both singles matches
-                                    const matchup1Key = getMatchupKey([a], [b]);
-                                    const matchup2Key = getMatchupKey([c], [d]);
-                                    const matchup1Count = matchupCount[matchup1Key] || 0;
-                                    const matchup2Count = matchupCount[matchup2Key] || 0;
-
-                                    // Score with penalty for repeated matchups
-                                    const score = diff1 + diff2 + (matchup1Count * 100) + (matchup2Count * 100);
-
-                                    if (!best || score < best.score) {
-                                        best = {
-                                            score,
-                                            matches: [
-                                                { team1: [a], team2: [b] },
-                                                { team1: [c], team2: [d] },
-                                            ],
-                                        };
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if (best) return best.matches;
-            }
-
-            // If 4-7 players: search pairings among top4 but minimize point differences
-            if (pool.length >= 4) {
-                const top4 = pool.slice(0, 4);
-                const options = pairingsForSingles(top4);
-                let best = null;
-                for (const opt of options) {
-                    const a = opt[0][0].id;
-                    const b = opt[1][0].id;
-                    const c = opt[2][0].id;
-                    const d = opt[3][0].id;
-                    const pa = rankingSnapshot[a]?.points ?? 0;
-                    const pb = rankingSnapshot[b]?.points ?? 0;
-                    const pc = rankingSnapshot[c]?.points ?? 0;
-                    const pd = rankingSnapshot[d]?.points ?? 0;
-                    const diff1 = Math.abs(pa - pb);
-                    const diff2 = Math.abs(pc - pd);
-
-                    // Check matchup frequency
-                    const matchup1Key = getMatchupKey([a], [b]);
-                    const matchup2Key = getMatchupKey([c], [d]);
-                    const matchup1Count = matchupCount[matchup1Key] || 0;
-                    const matchup2Count = matchupCount[matchup2Key] || 0;
-
-                    // Score with penalty
-                    const score = diff1 + diff2 + (matchup1Count * 100) + (matchup2Count * 100);
-
-                    if (!best || score < best.score) {
-                        best = {
-                            score,
-                            matches: [
-                                { team1: [a], team2: [b] },
-                                { team1: [c], team2: [d] },
-                            ],
-                        };
-                    }
-                }
-                if (best) return best.matches;
-            }
-
-            // fallback: at least 2 players -> suggest one 1v1 (least-recently-played)
+            // For >=2 players: find top 3 best 1v1 pairings
             if (pool.length >= 2) {
-                return [{ team1: [pool[0].id], team2: [pool[1].id] }];
+                const top = pool.slice(0, Math.min(6, pool.length)); // Use top 6 or all available
+                const candidates = [];
+
+                // Generate all possible 1v1 combinations
+                for (let i0 = 0; i0 < top.length - 1; i0++) {
+                    for (let i1 = i0 + 1; i1 < top.length; i1++) {
+                        const p1 = top[i0];
+                        const p2 = top[i1];
+
+                        const pa = rankingSnapshot[p1.id]?.points ?? 0;
+                        const pb = rankingSnapshot[p2.id]?.points ?? 0;
+                        const diff = Math.abs(pa - pb);
+
+                        // Check matchup frequency
+                        const matchupKey = getMatchupKey([p1.id], [p2.id]);
+                        const matchupFreq = matchupCount[matchupKey] || 0;
+
+                        // Score: rating diff + heavy penalty for repeated matchups
+                        const score = diff + (matchupFreq * 100);
+
+                        candidates.push({
+                            score,
+                            match: { team1: [p1], team2: [p2] }
+                        });
+                    }
+                }
+
+                // Sort by score (lower is better) and take top 3
+                candidates.sort((a, b) => a.score - b.score);
+
+                for (let i = 0; i < Math.min(3, candidates.length); i++) {
+                    suggestions.push(candidates[i].match);
+                }
+
+                if (suggestions.length > 0) {
+                    return suggestions;
+                }
             }
 
             return [];
@@ -788,108 +797,66 @@ function App() {
             ];
         };
 
+        // Generate top 3 best match options for user to choose from
         const suggestions = [];
 
-        // If we have >=8 players, try to create two disjoint matches from top 8
-        if (pool.length >= 8) {
-            const top8 = pool.slice(0, 8);
-            let best = null;
-            // iterate combinations of 4 indices for match1
-            for (let i0 = 0; i0 < 5; i0++) {
-                for (let i1 = i0 + 1; i1 < 6; i1++) {
-                    for (let i2 = i1 + 1; i2 < 7; i2++) {
-                        for (let i3 = i2 + 1; i3 < 8; i3++) {
-                            const idx1 = [i0, i1, i2, i3];
-                            const idx2 = [...Array(8).keys()].filter(i => !idx1.includes(i));
-                            const group1 = idx1.map(i => top8[i]);
-                            const group2 = idx2.map(i => top8[i]);
+        // For >=4 players: find top 3 best pairings from the pool
+        if (pool.length >= 4) {
+            const top = pool.slice(0, Math.min(8, pool.length)); // Use top 8 or all available
+            const candidates = [];
 
-                            // try all pairings within both groups
-                            const p1Options = pairingsFor4(group1);
-                            const p2Options = pairingsFor4(group2);
+            // Generate all possible 4-player combinations
+            for (let i0 = 0; i0 < top.length - 3; i0++) {
+                for (let i1 = i0 + 1; i1 < top.length - 2; i1++) {
+                    for (let i2 = i1 + 1; i2 < top.length - 1; i2++) {
+                        for (let i3 = i2 + 1; i3 < top.length; i3++) {
+                            const group = [top[i0], top[i1], top[i2], top[i3]];
+                            const pOptions = pairingsFor4(group);
 
-                            for (const p1 of p1Options) {
-                                const t1a = sumTeamPoints(p1[0]);
-                                const t1b = sumTeamPoints(p1[1]);
-                                const diff1 = Math.abs((t1a || 0) - (t1b || 0));
+                            for (const p of pOptions) {
+                                const a = sumTeamPoints(p[0]);
+                                const b = sumTeamPoints(p[1]);
+                                const diff = Math.abs((a || 0) - (b || 0));
 
-                                // Get matchup frequency for match 1
-                                const team1Ids = p1[0].map(p => p.id);
-                                const team2Ids = p1[1].map(p => p.id);
-                                const matchup1Key = getMatchupKey(team1Ids, team2Ids);
-                                const matchup1Count = matchupCount[matchup1Key] || 0;
+                                // Check matchup frequency
+                                const team1Ids = p[0].map(pl => pl.id);
+                                const team2Ids = p[1].map(pl => pl.id);
+                                const matchupKey = getMatchupKey(team1Ids, team2Ids);
+                                const matchupFreq = matchupCount[matchupKey] || 0;
 
-                                for (const p2 of p2Options) {
-                                    const t2a = sumTeamPoints(p2[0]);
-                                    const t2b = sumTeamPoints(p2[1]);
-                                    const diff2 = Math.abs((t2a || 0) - (t2b || 0));
+                                // Score: rating diff + heavy penalty for repeated matchups
+                                const score = diff + (matchupFreq * 100);
 
-                                    // Get matchup frequency for match 2
-                                    const team3Ids = p2[0].map(p => p.id);
-                                    const team4Ids = p2[1].map(p => p.id);
-                                    const matchup2Key = getMatchupKey(team3Ids, team4Ids);
-                                    const matchup2Count = matchupCount[matchup2Key] || 0;
-
-                                    // Score = rating difference + heavy penalty for repeated matchups
-                                    const score = diff1 + diff2 + (matchup1Count * 100) + (matchup2Count * 100);
-
-                                    if (!best || score < best.score) {
-                                        best = {
-                                            score,
-                                            matches: [
-                                                { team1: p1[0], team2: p1[1] },
-                                                { team1: p2[0], team2: p2[1] },
-                                            ],
-                                        };
-                                    }
-                                }
+                                candidates.push({
+                                    score,
+                                    match: { team1: p[0], team2: p[1] }
+                                });
                             }
                         }
                     }
                 }
             }
 
-            if (best) {
-                // return matches as arrays of player objects
-                return best.matches;
+            // Sort by score (lower is better) and take top 3 unique options
+            candidates.sort((a, b) => a.score - b.score);
+
+            // Filter out duplicates (same players, different order)
+            const seen = new Set();
+            for (const candidate of candidates) {
+                const key = [...candidate.match.team1.map(p => p.id), ...candidate.match.team2.map(p => p.id)].sort().join(',');
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    suggestions.push(candidate.match);
+                    if (suggestions.length >= 3) break;
+                }
+            }
+
+            if (suggestions.length > 0) {
+                return suggestions;
             }
         }
 
-        // If 4-7 players: ensure the FIRST match uses 4 players (two teams of 2)
-        // and, if there are at least two players remaining, create a second 1v1 match
-        if (pool.length >= 4) {
-            const top4 = pool.slice(0, 4);
-            let best = null;
-            const pOptions = pairingsFor4(top4);
-            for (const p of pOptions) {
-                const a = sumTeamPoints(p[0]);
-                const b = sumTeamPoints(p[1]);
-                const diff = Math.abs((a || 0) - (b || 0));
-
-                // Check matchup frequency
-                const team1Ids = p[0].map(pl => pl.id);
-                const team2Ids = p[1].map(pl => pl.id);
-                const matchupKey = getMatchupKey(team1Ids, team2Ids);
-                const matchupFreq = matchupCount[matchupKey] || 0;
-
-                // Score: rating diff + heavy penalty for repeated matchups
-                const score = diff + (matchupFreq * 100);
-
-                if (!best || score < best.score) {
-                    best = { score, match: { team1: p[0], team2: p[1] } };
-                }
-            }
-            if (best) {
-                const matchesOut = [best.match];
-                // if there are at least two more players, add a second 1v1 using next two
-                if (pool.length >= 6) {
-                    matchesOut.push({ team1: [pool[4]], team2: [pool[5]] });
-                }
-                return matchesOut;
-            }
-        }
-
-        // 2-3 players: return best 1v1 (pick two least-recently-played)
+        // 2-3 players: return single 1v1 option
         if (pool.length >= 2) {
             return [{ team1: [pool[0]], team2: [pool[1]] }];
         }
@@ -1250,6 +1217,294 @@ function App() {
     /* =======================
        RENDER
     ======================= */
+    // Simple SVG Line Chart Component with better date handling
+    const LineChart = ({ data }) => {
+        const [hoveredPoint, setHoveredPoint] = useState(null);
+
+        if (!data || data.length === 0) {
+            return (
+                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                    Chọn người chơi để xem biểu đồ
+                </div>
+            );
+        }
+
+        const width = 900;
+        const height = 450;
+        const padding = { top: 40, right: 140, bottom: 80, left: 60 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+
+        // Collect all unique dates and sort them
+        const allDates = new Set();
+        data.forEach(player => {
+            player.points.forEach(p => {
+                if (p.date) allDates.add(p.date.getTime());
+            });
+        });
+        const sortedDates = Array.from(allDates).sort((a, b) => a - b);
+
+        // Find min/max values
+        let minPoints = 0;
+        let maxPoints = 0;
+
+        data.forEach(player => {
+            player.points.forEach(p => {
+                if (p.points < minPoints) minPoints = p.points;
+                if (p.points > maxPoints) maxPoints = p.points;
+            });
+        });
+
+        // Add padding to y-axis
+        const yPadding = Math.max(10, (maxPoints - minPoints) * 0.1);
+        minPoints = Math.floor(minPoints - yPadding);
+        maxPoints = Math.ceil(maxPoints + yPadding);
+
+        const minDate = sortedDates.length > 0 ? sortedDates[0] : 0;
+        const maxDate = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : 1;
+
+        // Scale functions
+        const scaleX = (date) => {
+            if (!date) return 0;
+            const timestamp = typeof date === 'number' ? date : date.getTime();
+            const range = maxDate - minDate;
+            if (range === 0) return chartWidth / 2;
+            return ((timestamp - minDate) / range) * chartWidth;
+        };
+
+        const scaleY = (points) => {
+            const range = maxPoints - minPoints;
+            if (range === 0) return chartHeight / 2;
+            return chartHeight - ((points - minPoints) / range) * chartHeight;
+        };
+
+        // Format date for display
+        const formatDate = (date) => {
+            if (!date) return '';
+            const d = typeof date === 'number' ? new Date(date) : date;
+            return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        };
+
+        const formatDateFull = (date) => {
+            if (!date) return '';
+            const d = typeof date === 'number' ? new Date(date) : date;
+            return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+        };
+
+        // Colors for different players
+        const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+
+        // Calculate date labels (show every ~3-4 dates or all if fewer than 8)
+        const dateLabels = sortedDates.filter((_, idx) => {
+            if (sortedDates.length <= 8) return true;
+            const step = Math.ceil(sortedDates.length / 6);
+            return idx % step === 0 || idx === sortedDates.length - 1;
+        });
+
+        return (
+            <div style={{ overflowX: 'auto', paddingBottom: 20, position: 'relative' }}>
+                <svg width={width} height={height} style={{ minWidth: width }}>
+                    {/* Chart background */}
+                    <rect
+                        x={padding.left}
+                        y={padding.top}
+                        width={chartWidth}
+                        height={chartHeight}
+                        fill="#fafafa"
+                        stroke="#e5e7eb"
+                    />
+
+                    {/* Vertical grid lines for dates */}
+                    {sortedDates.map((timestamp, idx) => {
+                        const x = padding.left + scaleX(timestamp);
+                        return (
+                            <line
+                                key={idx}
+                                x1={x}
+                                y1={padding.top}
+                                x2={x}
+                                y2={padding.top + chartHeight}
+                                stroke="#f3f4f6"
+                                strokeWidth="1"
+                            />
+                        );
+                    })}
+
+                    {/* Horizontal grid lines */}
+                    {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                        const y = padding.top + chartHeight * ratio;
+                        const value = Math.round(maxPoints - (maxPoints - minPoints) * ratio);
+                        return (
+                            <g key={ratio}>
+                                <line
+                                    x1={padding.left}
+                                    y1={y}
+                                    x2={padding.left + chartWidth}
+                                    y2={y}
+                                    stroke="#e5e7eb"
+                                    strokeDasharray="4,4"
+                                />
+                                <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="12" fill="#6b7280">
+                                    {value}
+                                </text>
+                            </g>
+                        );
+                    })}
+
+                    {/* Date labels on X axis */}
+                    {dateLabels.map((timestamp, idx) => {
+                        const x = padding.left + scaleX(timestamp);
+                        return (
+                            <g key={idx}>
+                                <text
+                                    x={x}
+                                    y={padding.top + chartHeight + 20}
+                                    textAnchor="middle"
+                                    fontSize="11"
+                                    fill="#6b7280"
+                                >
+                                    {formatDate(timestamp)}
+                                </text>
+                            </g>
+                        );
+                    })}
+
+                    {/* Draw lines for each player */}
+                    {data.map((player, idx) => {
+                        const color = colors[idx % colors.length];
+                        const validPoints = player.points.filter(p => p.date !== null);
+
+                        if (validPoints.length === 0) return null;
+
+                        const pathData = validPoints
+                            .map((p, i) => {
+                                const x = padding.left + scaleX(p.date);
+                                const y = padding.top + scaleY(p.points);
+                                return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+                            })
+                            .join(' ');
+
+                        return (
+                            <g key={idx}>
+                                {/* Line */}
+                                <path
+                                    d={pathData}
+                                    fill="none"
+                                    stroke={color}
+                                    strokeWidth="2.5"
+                                />
+                                {/* Points */}
+                                {validPoints.map((p, i) => {
+                                    const x = padding.left + scaleX(p.date);
+                                    const y = padding.top + scaleY(p.points);
+                                    const pointKey = `${idx}-${i}`;
+                                    const isHovered = hoveredPoint === pointKey;
+                                    return (
+                                        <g key={i}>
+                                            <circle
+                                                cx={x}
+                                                cy={y}
+                                                r={isHovered ? "6" : "5"}
+                                                fill="white"
+                                                stroke={color}
+                                                strokeWidth={isHovered ? "3" : "2"}
+                                                style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                                                onMouseEnter={() => setHoveredPoint(pointKey)}
+                                                onMouseLeave={() => setHoveredPoint(null)}
+                                            />
+                                            {isHovered && (
+                                                <g>
+                                                    {/* Tooltip background */}
+                                                    <rect
+                                                        x={x + 10}
+                                                        y={y - 35}
+                                                        width="120"
+                                                        height="30"
+                                                        fill="rgba(0,0,0,0.85)"
+                                                        rx="4"
+                                                    />
+                                                    {/* Tooltip text */}
+                                                    <text
+                                                        x={x + 70}
+                                                        y={y - 23}
+                                                        textAnchor="middle"
+                                                        fontSize="11"
+                                                        fontWeight="600"
+                                                        fill="white"
+                                                    >
+                                                        {player.name}
+                                                    </text>
+                                                    <text
+                                                        x={x + 70}
+                                                        y={y - 10}
+                                                        textAnchor="middle"
+                                                        fontSize="10"
+                                                        fill="white"
+                                                    >
+                                                        {formatDateFull(p.date)}: {p.points} điểm
+                                                    </text>
+                                                </g>
+                                            )}
+                                        </g>
+                                    );
+                                })}
+                            </g>
+                        );
+                    })}
+
+                    {/* Axis labels */}
+                    <text
+                        x={padding.left + chartWidth / 2}
+                        y={height - 25}
+                        textAnchor="middle"
+                        fontSize="13"
+                        fontWeight="600"
+                        fill="#374151"
+                    >
+                        Ngày thi đấu
+                    </text>
+                    <text
+                        x={20}
+                        y={padding.top + chartHeight / 2}
+                        textAnchor="middle"
+                        fontSize="13"
+                        fontWeight="600"
+                        fill="#374151"
+                        transform={`rotate(-90, 20, ${padding.top + chartHeight / 2})`}
+                    >
+                        Điểm số
+                    </text>
+
+                    {/* Legend */}
+                    {data.map((player, idx) => {
+                        const color = colors[idx % colors.length];
+                        const y = padding.top + idx * 28;
+                        return (
+                            <g key={idx}>
+                                <circle
+                                    cx={padding.left + chartWidth + 25}
+                                    cy={y}
+                                    r="5"
+                                    fill="white"
+                                    stroke={color}
+                                    strokeWidth="2"
+                                />
+                                <text
+                                    x={padding.left + chartWidth + 38}
+                                    y={y + 4}
+                                    fontSize="12"
+                                    fill="#374151"
+                                >
+                                    {player.name}
+                                </text>
+                            </g>
+                        );
+                    })}
+                </svg>
+            </div>
+        );
+    };
+
     // Auth modal markup - rendered into document.body to avoid stacking-context issues
     const AuthModal = () => {
         if (!authModalOpen) return null;
@@ -1326,6 +1581,7 @@ function App() {
                     ["createMatch", "Trận Đấu"],
                     ["players", "Người Chơi"],
                     ["history", "Lịch Sử"],
+                    ["chart", "Biểu Đồ"],
                     ["config", "Cấu Hình"],
                 ].map(([key, label]) => (
                     <button
@@ -1355,6 +1611,7 @@ function App() {
                             <SkeletonTable rows={5} columns={3} />
                         )}
                         {activeTab === "createMatch" && <SkeletonCard />}
+                        {activeTab === "chart" && <SkeletonCard />}
                     </section>
                 )}
 
@@ -1422,7 +1679,7 @@ function App() {
                                 {/* Gợi ý cặp đấu (nếu có) */}
                                 {suggestedMatchesWithDiff && suggestedMatchesWithDiff.length > 0 && (
                                     <div style={{ margin: '12px 0 18px 0' }}>
-                                        <h3 style={{ margin: '0 0 8px 0', fontSize: 15 }}>Gợi ý cặp đấu tiếp theo</h3>
+                                        <h3 style={{ margin: '0 0 8px 0', fontSize: 15 }}>Chọn 1 trong {suggestedMatchesWithDiff.length} gợi ý</h3>
                                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                             {suggestedMatchesWithDiff.map((m, idx) => {
                                                 const bg = (m.diff ?? 0) <= 1 ? '#ecfdf5' : (m.diff ?? 0) <= 3 ? '#fff7ed' : '#fff1f2';
@@ -1430,10 +1687,10 @@ function App() {
                                                 return (
                                                     <div key={idx} style={{ flex: '1 1 240px', minWidth: 220, background: '#ffffff', border: '1px solid #e6eef7', borderRadius: 8, padding: 8 }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                            <div style={{ fontSize: 13, fontWeight: 600 }}>Trận {idx + 1}</div>
+                                                            <div style={{ fontSize: 13, fontWeight: 600 }}>Lựa chọn {idx + 1}</div>
                                                             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                                 <div style={{ padding: '4px 8px', borderRadius: 999, background: bg, color, fontWeight: 600, fontSize: 11 }}>Δ {m.diff ?? 0}</div>
-                                                                <button className="btn btn-primary" style={{ padding: '6px 8px', fontSize: 13 }} onClick={() => applySuggestion(m)}>Áp dụng</button>
+                                                                <button className="btn btn-primary" style={{ padding: '6px 8px', fontSize: 13 }} onClick={() => applySuggestion(m)}>Chọn</button>
                                                             </div>
                                                         </div>
 
@@ -1521,7 +1778,30 @@ function App() {
                                     </div>
 
                                     {/* VS: phân cách giữa hai đội */}
-                                    <div className="vs-divider">VS</div>
+                                    <div className="vs-divider">
+                                        <div>VS</div>
+                                        {team1.players.length > 0 && team2.players.length > 0 && (() => {
+                                            const currentRanking = calculateRanking(true);
+                                            const team1Pts = getTeamPoints(team1.players, currentRanking);
+                                            const team2Pts = getTeamPoints(team2.players, currentRanking);
+                                            const diff = Math.abs(team1Pts - team2Pts);
+                                            const bg = diff <= 10 ? '#ecfdf5' : diff <= 30 ? '#fff7ed' : '#fff1f2';
+                                            const color = diff <= 10 ? '#166534' : diff <= 30 ? '#92400e' : '#991b1b';
+                                            return (
+                                                <div style={{
+                                                    marginTop: 8,
+                                                    padding: '4px 8px',
+                                                    borderRadius: 999,
+                                                    background: bg,
+                                                    color,
+                                                    fontWeight: 600,
+                                                    fontSize: 11
+                                                }}>
+                                                    Δ {diff}
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
 
                                     {/* Đội 2 */}
                                     <div className="team-box">
@@ -1853,6 +2133,8 @@ function App() {
                                                                 margin: "6px 0",
                                                                 display: "flex",
                                                                 justifyContent: "center",
+                                                                alignItems: "center",
+                                                                gap: 8,
                                                                 fontSize: 18,
                                                             }}
                                                         >
@@ -1860,6 +2142,18 @@ function App() {
                                                                 match.score2 != null
                                                                 ? `${match.score1} - ${match.score2}`
                                                                 : ""}
+                                                            {match.meta?.ratingDiff != null && (
+                                                                <span style={{
+                                                                    fontSize: 11,
+                                                                    fontWeight: 600,
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: 999,
+                                                                    background: match.meta.ratingDiff <= 10 ? '#ecfdf5' : match.meta.ratingDiff <= 30 ? '#fff7ed' : '#fff1f2',
+                                                                    color: match.meta.ratingDiff <= 10 ? '#166534' : match.meta.ratingDiff <= 30 ? '#92400e' : '#991b1b'
+                                                                }}>
+                                                                    Δ {match.meta.ratingDiff}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="history-teams">
                                                             <div
@@ -1868,11 +2162,23 @@ function App() {
                                                                     : ""
                                                                     }`}
                                                             >
-                                                                {match.team1
-                                                                    .map((id) =>
-                                                                        getPlayerName(id)
-                                                                    )
-                                                                    .join(", ")}
+                                                                <div>
+                                                                    {match.team1
+                                                                        .map((id) =>
+                                                                            getPlayerName(id)
+                                                                        )
+                                                                        .join(", ")}
+                                                                </div>
+                                                                {match.meta?.pointDelta != null && (
+                                                                    <div style={{
+                                                                        marginTop: 4,
+                                                                        fontSize: 12,
+                                                                        fontWeight: 600,
+                                                                        color: match.winner === 1 ? '#059669' : '#dc2626'
+                                                                    }}>
+                                                                        {match.winner === 1 ? '+' : '-'}{match.meta.pointDelta}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                             <span className="vs">vs</span>
                                                             <div
@@ -1881,11 +2187,23 @@ function App() {
                                                                     : ""
                                                                     }`}
                                                             >
-                                                                {match.team2
-                                                                    .map((id) =>
-                                                                        getPlayerName(id)
-                                                                    )
-                                                                    .join(", ")}
+                                                                <div>
+                                                                    {match.team2
+                                                                        .map((id) =>
+                                                                            getPlayerName(id)
+                                                                        )
+                                                                        .join(", ")}
+                                                                </div>
+                                                                {match.meta?.pointDelta != null && (
+                                                                    <div style={{
+                                                                        marginTop: 4,
+                                                                        fontSize: 12,
+                                                                        fontWeight: 600,
+                                                                        color: match.winner === 2 ? '#059669' : '#dc2626'
+                                                                    }}>
+                                                                        {match.winner === 2 ? '+' : '-'}{match.meta.pointDelta}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                         {editingMatchId === match.id ? (
@@ -2265,6 +2583,96 @@ function App() {
                                     * Hàng cuối nên là giá trị lớn để bao quát mọi
                                     trường hợp
                                 </div>
+                            </section>
+                        )}
+
+                        {/* Tab Biểu đồ */}
+                        {activeTab === "chart" && (
+                            <section className="section">
+                                <h2 className="section-title">Biểu Đồ Điểm Số Theo Thời Gian</h2>
+
+                                {/* Player selection */}
+                                <div style={{ marginBottom: 20 }}>
+                                    <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
+                                        Chọn người chơi để so sánh (tối đa 6 người)
+                                    </h3>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {playerFilterOptions
+                                            .filter(p => !p.disabled)
+                                            .map(player => {
+                                                const isSelected = chartPlayerIds.includes(player.id);
+                                                return (
+                                                    <button
+                                                        key={player.id}
+                                                        className={isSelected ? "btn btn-primary" : "btn"}
+                                                        style={{
+                                                            padding: '8px 12px',
+                                                            fontSize: 13,
+                                                            opacity: !isSelected && chartPlayerIds.length >= 6 ? 0.5 : 1,
+                                                            cursor: !isSelected && chartPlayerIds.length >= 6 ? 'not-allowed' : 'pointer'
+                                                        }}
+                                                        onClick={() => {
+                                                            if (isSelected) {
+                                                                // Remove player
+                                                                setChartPlayerIds(chartPlayerIds.filter(id => id !== player.id));
+                                                            } else if (chartPlayerIds.length < 6) {
+                                                                // Add player
+                                                                setChartPlayerIds([...chartPlayerIds, player.id]);
+                                                            }
+                                                        }}
+                                                        disabled={!isSelected && chartPlayerIds.length >= 6}
+                                                    >
+                                                        {player.name}
+                                                    </button>
+                                                );
+                                            })}
+                                    </div>
+                                </div>
+
+                                {/* Chart */}
+                                <div style={{ background: '#fff', borderRadius: 8, padding: 20, border: '1px solid #e6eef7' }}>
+                                    <LineChart data={calculatePointTimeline(chartPlayerIds)} />
+                                </div>
+
+                                {/* Stats summary */}
+                                {chartPlayerIds.length > 0 && (
+                                    <div style={{ marginTop: 20 }}>
+                                        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
+                                            Thống kê
+                                        </h3>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                                            {chartPlayerIds.map(playerId => {
+                                                const player = players.find(p => p.id === playerId);
+                                                if (!player) return null;
+                                                const ranking = rankingData.find(r => r.name === player.name);
+                                                const winRate = ranking?.totalMatches > 0
+                                                    ? Math.round((ranking.wins / ranking.totalMatches) * 100)
+                                                    : 0;
+                                                return (
+                                                    <div
+                                                        key={playerId}
+                                                        style={{
+                                                            background: '#fafafa',
+                                                            padding: 12,
+                                                            borderRadius: 8,
+                                                            border: '1px solid #e5e7eb'
+                                                        }}
+                                                    >
+                                                        <div style={{ fontWeight: 600, marginBottom: 6 }}>{player.name}</div>
+                                                        <div style={{ fontSize: 13, color: '#6b7280' }}>
+                                                            Điểm: <span style={{ fontWeight: 600, color: '#374151' }}>{ranking?.points ?? 0}</span>
+                                                        </div>
+                                                        <div style={{ fontSize: 13, color: '#6b7280' }}>
+                                                            Trận: {ranking?.totalMatches ?? 0} •
+                                                            Thắng: {ranking?.wins ?? 0} •
+                                                            {winRate}%
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </section>
                         )}
 

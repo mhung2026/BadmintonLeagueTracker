@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(if [ -f \"e:\\\\Chore\\\\BadmintonLeagueTracker\\\\docs\\\\DB_MIGRATIONS.md\" ])",
+      "Bash(then cat \"e:\\\\Chore\\\\BadmintonLeagueTracker\\\\docs\\\\DB_MIGRATIONS.md\")",
+      "Bash(else echo \"File does not exist\")",
+      "Bash(fi)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Thêm current_points, total_matches, wins vào players table\n\n- Migration 002: Thêm current_points để lưu điểm hiện tại\n- Migration 003: Thêm total_matches và wins để lưu thống kê\n- Cập nhật logic: Đọc ranking trực tiếp từ players thay vì tính từ matches\n- Tự động cập nhật stats khi tạo trận mới\n- Gộp nút \"Sync điểm\" vào \"Tính lại toàn bộ database\"\n- Thêm docs chi tiết về scoring system và migrations\n\nPerformance: Cải thiện đáng kể hiệu suất đọc ranking\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix\\(suggest\\): Chỉ dùng trận trong ngày để gợi ý\n\n- Xóa fallback về 30 trận gần nhất\n- Gợi ý trận đấu chỉ tính các trận đã đấu trong ngày hôm nay\n- Mỗi ngày mới bắt đầu với slate sạch\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
