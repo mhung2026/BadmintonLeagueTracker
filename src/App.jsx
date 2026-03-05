@@ -2085,23 +2085,25 @@ function App() {
                                             .map((player) => (
                                                 <div
                                                     key={player.id}
-                                                    className="player-item"
+                                                    className={`player-item${editingPlayerId === player.id ? ' player-item-editing' : ''}`}
                                                 >
                                                     {editingPlayerId === player.id ? (
                                                         <>
-                                                            <PlayerAvatar player={player} size="lg" />
-                                                            <input
-                                                                type="text"
-                                                                className="input-field"
-                                                                style={{ flex: 1, marginRight: 8, marginLeft: 10 }}
-                                                                value={editingPlayerName}
-                                                                onChange={(e) => setEditingPlayerName(e.target.value)}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === "Enter") savePlayerName();
+                                                            <div className="player-info-row">
+                                                                <PlayerAvatar player={player} size="lg" />
+                                                                <input
+                                                                    type="text"
+                                                                    className="input-field"
+                                                                    style={{ flex: 1 }}
+                                                                    value={editingPlayerName}
+                                                                    onChange={(e) => setEditingPlayerName(e.target.value)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === "Enter") savePlayerName();
                                                                     if (e.key === "Escape") cancelEditingPlayer();
                                                                 }}
                                                             />
-                                                            <div className="player-actions" style={{ display: "flex", gap: 6 }}>
+                                                            </div>
+                                                            <div className="player-actions">
                                                                 <button className="btn btn-primary" type="button" onClick={savePlayerName}>
                                                                     Lưu
                                                                 </button>
@@ -2112,66 +2114,67 @@ function App() {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            {/* Avatar với click để đổi */}
-                                                            <div
-                                                                className="avatar-upload-wrap"
-                                                                title="Click để đổi ảnh đại diện"
-                                                                onClick={() => {
-                                                                    setEditingAvatarId(editingAvatarId === player.id ? null : player.id);
-                                                                    setEditingAvatarUrl(player.avatar_url || "");
-                                                                }}
-                                                            >
-                                                                <PlayerAvatar player={player} size="lg" />
-                                                                <div className="avatar-upload-overlay">
-                                                                    {/* Camera SVG icon */}
-                                                                    <svg className="avatar-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                                                                        <circle cx="12" cy="13" r="4"/>
-                                                                    </svg>
-                                                                </div>
-                                                            </div>
-                                                            <div style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
-                                                                <div className="player-name">
-                                                                    {player.name}{player.disabled ? <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 8 }}>(Vô hiệu)</span> : null}
-                                                                </div>
-                                                                {/* Avatar URL form inline */}
-                                                                {editingAvatarId === player.id && (
-                                                                    <div className="avatar-url-form">
-                                                                        <input
-                                                                            type="url"
-                                                                            className="input-field"
-                                                                            placeholder="Dán link ảnh (https://...)"
-                                                                            value={editingAvatarUrl}
-                                                                            autoFocus
-                                                                            onChange={(e) => setEditingAvatarUrl(e.target.value)}
-                                                                            onKeyDown={(e) => {
-                                                                                if (e.key === "Enter") savePlayerAvatar(player.id, editingAvatarUrl);
-                                                                                if (e.key === "Escape") { setEditingAvatarId(null); setEditingAvatarUrl(""); }
-                                                                            }}
-                                                                        />
-                                                                        <button
-                                                                            className="btn btn-primary btn-compact"
-                                                                            style={{ padding: '6px 12px', minHeight: 'unset', fontSize: 13 }}
-                                                                            type="button"
-                                                                            onClick={() => savePlayerAvatar(player.id, editingAvatarUrl)}
-                                                                        >
-                                                                            Lưu
-                                                                        </button>
-                                                                        {player.avatar_url && (
-                                                                            <button
-                                                                                className="btn-delete btn-compact"
-                                                                                style={{ minHeight: 'unset', fontSize: 13 }}
-                                                                                type="button"
-                                                                                title="Xoá ảnh đại diện"
-                                                                                onClick={() => savePlayerAvatar(player.id, "")}
-                                                                            >
-                                                                                Xoá ảnh
-                                                                            </button>
-                                                                        )}
+                                                            <div className="player-info-row">
+                                                                {/* Avatar với click để đổi */}
+                                                                <div
+                                                                    className="avatar-upload-wrap"
+                                                                    title="Click để đổi ảnh đại diện"
+                                                                    onClick={() => {
+                                                                        setEditingAvatarId(editingAvatarId === player.id ? null : player.id);
+                                                                        setEditingAvatarUrl(player.avatar_url || "");
+                                                                    }}
+                                                                >
+                                                                    <PlayerAvatar player={player} size="lg" />
+                                                                    <div className="avatar-upload-overlay">
+                                                                        <svg className="avatar-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                                                                            <circle cx="12" cy="13" r="4"/>
+                                                                        </svg>
                                                                     </div>
-                                                                )}
+                                                                </div>
+                                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                                    <div className="player-name">
+                                                                        {player.name}{player.disabled ? <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 8 }}>(Vô hiệu)</span> : null}
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                            <div className="player-actions" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                                            {/* Avatar URL form inline */}
+                                                            {editingAvatarId === player.id && (
+                                                                <div className="avatar-url-form">
+                                                                    <input
+                                                                        type="url"
+                                                                        className="input-field"
+                                                                        placeholder="Dán link ảnh (https://...)"
+                                                                        value={editingAvatarUrl}
+                                                                        autoFocus
+                                                                        onChange={(e) => setEditingAvatarUrl(e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === "Enter") savePlayerAvatar(player.id, editingAvatarUrl);
+                                                                            if (e.key === "Escape") { setEditingAvatarId(null); setEditingAvatarUrl(""); }
+                                                                        }}
+                                                                    />
+                                                                    <button
+                                                                        className="btn btn-primary btn-compact"
+                                                                        style={{ padding: '6px 12px', minHeight: 'unset', fontSize: 13 }}
+                                                                        type="button"
+                                                                        onClick={() => savePlayerAvatar(player.id, editingAvatarUrl)}
+                                                                    >
+                                                                        Lưu
+                                                                    </button>
+                                                                    {player.avatar_url && (
+                                                                        <button
+                                                                            className="btn-delete btn-compact"
+                                                                            style={{ minHeight: 'unset', fontSize: 13 }}
+                                                                            type="button"
+                                                                            title="Xoá ảnh đại diện"
+                                                                            onClick={() => savePlayerAvatar(player.id, "")}
+                                                                        >
+                                                                            Xoá ảnh
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            <div className="player-actions">
                                                                 <button
                                                                     className="btn"
                                                                     type="button"

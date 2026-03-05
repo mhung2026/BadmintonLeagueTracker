@@ -463,8 +463,9 @@ body {
 
 .player-item {
     display: flex;
-    justify-content: space-between;
+    flex-wrap: wrap;
     align-items: center;
+    gap: 10px;
     padding: 12px 16px;
     background: #f8fafc;
     border-radius: 10px;
@@ -475,6 +476,20 @@ body {
 .player-item:hover {
     border-color: #bfdbfe;
     background: #f0f7ff;
+}
+
+.player-info-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+}
+
+.player-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 /* === MATCH TYPE === */
@@ -1265,12 +1280,6 @@ body {
     }
 
     /* Ranking: 2-col grid when many players */
-    .ranking-list {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-    }
-
     /* Teams container stays 3-col */
     .teams-container {
         grid-template-columns: 1fr auto 1fr;
@@ -1318,12 +1327,6 @@ body {
 
     .section {
         padding: 24px 28px;
-    }
-
-    .ranking-list {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
     }
 
     .suggestion-card {
@@ -1441,6 +1444,51 @@ body {
         grid-template-columns: 1fr auto 1fr;
         gap: 6px;
         font-size: 12px;
+    }
+
+    /* Player item: stack vertically on mobile */
+    .player-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 12px;
+    }
+
+    .player-info-row {
+        gap: 8px;
+    }
+
+    .player-actions {
+        flex-wrap: wrap;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 8px;
+    }
+
+    .player-actions .btn,
+    .player-actions .btn-warning,
+    .player-actions .btn-delete {
+        flex: 1;
+        justify-content: center;
+        text-align: center;
+        min-width: 0;
+        font-size: 12px;
+        padding: 7px 6px;
+    }
+
+    /* Avatar URL form: full width on mobile */
+    .avatar-url-form {
+        margin-top: 6px;
+    }
+
+    .avatar-url-form .input-field {
+        min-width: 0;
+        flex: 1;
+    }
+
+    /* Editing mode: stack vertically */
+    .player-item-editing {
+        flex-direction: column;
+        gap: 8px;
     }
 }
 
