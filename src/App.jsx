@@ -1,11 +1,90 @@
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import "./App.css";
 import { supabase } from "./supabaseClient";
 import { getTeamPoints, getDivisorByPointDiff as getDivisorByPointDiffUtil, calcPointDelta as calcPointDeltaUtil, formatDateLocal as formatDateLocalUtil } from "./utils.js";
 import { useToast } from "./Toast.jsx";
 import { createPortal } from "react-dom";
 import { SkeletonRanking, SkeletonCard, SkeletonTable } from "./Skeleton.jsx";
+
+// ─── AUTH MODAL ────────────────────────────────────────────────────────────
+// Tách ra ngoài App để tránh re-render toàn bộ App khi user gõ phím.
+// Dùng uncontrolled input (useRef) → không setState mỗi keystroke → hết lag.
+function AuthModal({ open, title, onConfirm, onClose }) {
+    const inputRef = useRef(null);
+
+    // Focus input mỗi khi modal mở
+    useEffect(() => {
+        if (open && inputRef.current) {
+            // Timeout nhỏ để đợi portal mount xong trên mobile
+            const t = setTimeout(() => inputRef.current?.focus(), 50);
+            return () => clearTimeout(t);
+        }
+    }, [open]);
+
+    if (!open) return null;
+
+    const handleConfirm = () => {
+        onConfirm(inputRef.current?.value ?? "");
+        if (inputRef.current) inputRef.current.value = "";
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === "Enter") handleConfirm();
+        if (e.key === "Escape") onClose();
+    };
+
+    const modal = (
+        <div
+            onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+            style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(2,6,23,0.6)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 2147483647,
+                padding: '0 16px',
+            }}
+        >
+            <div
+                role="dialog"
+                aria-modal="true"
+                style={{
+                    background: '#fff',
+                    padding: 20,
+                    borderRadius: 12,
+                    width: '100%',
+                    maxWidth: 360,
+                    boxShadow: '0 10px 30px rgba(2,6,23,0.3)',
+                }}
+            >
+                <div style={{ fontWeight: 700, marginBottom: 12, fontSize: 15 }}>{title}</div>
+                <input
+                    ref={inputRef}
+                    type="password"
+                    className="input-field"
+                    placeholder="Mã xác nhận"
+                    onKeyDown={handleKeyDown}
+                    style={{ width: '100%', marginBottom: 12, boxSizing: 'border-box' }}
+                    autoComplete="current-password"
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    <button type="button" className="btn" onClick={onClose}>Huỷ</button>
+                    <button type="button" className="btn btn-primary" onClick={handleConfirm}>Xác nhận</button>
+                </div>
+            </div>
+        </div>
+    );
+
+    try {
+        return createPortal(modal, document.body);
+    } catch {
+        return modal;
+    }
+}
+// ───────────────────────────────────────────────────────────────────────────
 
 function App() {
     const { addToast } = useToast();
@@ -482,7 +561,7 @@ function App() {
        RANKING
     ======================= */
 
-    const calculateRanking = (forSnapshot = false) => {
+    const calculateRanking = useCallback((forSnapshot = false) => {
         const ranking = {};
 
         players.forEach((p) => {
@@ -498,28 +577,39 @@ function App() {
             (a, b) => new Date(a.date) - new Date(b.date)
         );
         sortedMatches.forEach((match) => {
-            if (!match.meta?.pointDelta) return;
+            // Fallback: nếu match legacy không có meta.pointDelta, tính lại trực tiếp
+            let delta = match.meta?.pointDelta;
+            if (!delta) {
+                const score1 = Number(match.score1);
+                const score2 = Number(match.score2);
+                if (!Number.isFinite(score1) || !Number.isFinite(score2) || score1 === score2) return;
+                const team1PtsBefore = getTeamPoints(match.team1 || [], ranking);
+                const team2PtsBefore = getTeamPoints(match.team2 || [], ranking);
+                const scoreDiff = Math.abs(score1 - score2);
+                const winner = score1 > score2 ? 1 : 2;
+                const { appliedDelta } = computeAppliedDelta(winner, team1PtsBefore, team2PtsBefore, scoreDiff);
+                delta = appliedDelta;
+            }
 
-            const delta = match.meta.pointDelta;
             const winnerTeam = match.winner;
             const loserTeam = winnerTeam === 1 ? 2 : 1;
 
-            match[`team${winnerTeam}`].forEach((pid) => {
+            (match[`team${winnerTeam}`] || []).forEach((pid) => {
                 if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
                 ranking[pid].points += delta;
                 ranking[pid].wins += 1;
             });
 
-            match[`team${loserTeam}`].forEach((pid) => {
+            (match[`team${loserTeam}`] || []).forEach((pid) => {
                 if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
                 ranking[pid].points -= delta;
             });
 
-            match.team1.forEach((pid) => {
+            (match.team1 || []).forEach((pid) => {
                 if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
                 ranking[pid].totalMatches++;
             });
-            match.team2.forEach((pid) => {
+            (match.team2 || []).forEach((pid) => {
                 if (!ranking[pid]) ranking[pid] = { name: "Unknown", points: 0, totalMatches: 0, wins: 0 };
                 ranking[pid].totalMatches++;
             });
@@ -528,7 +618,11 @@ function App() {
         if (forSnapshot) return ranking;
 
         return Object.values(ranking).sort((a, b) => b.points - a.points);
-    };
+    }, [players, matches, computeAppliedDelta, getDivisorByPointDiff]);
+
+    // Memoized ranking snapshot — used by suggestNextMatches and suggestedMatchesWithDiff
+    // so calculateRanking(true) is NOT called on every render inside those callbacks.
+    const rankingSnapshot = useMemo(() => calculateRanking(true), [calculateRanking]);
 
     // Calculate point timeline for chart
     const calculatePointTimeline = useCallback((playerIds) => {
@@ -643,36 +737,23 @@ function App() {
         }
     }, [calculateRanking, fetchPlayers]);
 
-    // Update current_points, total_matches, and wins for specific players after a match
+    // Update current_points, total_matches, and wins for specific players after a match.
+    // Uses a Supabase RPC to perform atomic SQL increments — avoids race conditions when
+    // multiple users submit matches at the same time.
     const updatePlayerStats = useCallback(async (playerIds, pointDelta, isWinner) => {
         try {
-            const updates = [];
-            for (const playerId of playerIds) {
-                const player = players.find(p => p.id === playerId);
-                if (!player) continue;
-
-                const currentPoints = player.current_points ?? 0;
-                const newPoints = isWinner ? currentPoints + pointDelta : currentPoints - pointDelta;
-                const newTotalMatches = (player.total_matches ?? 0) + 1;
-                const newWins = (player.wins ?? 0) + (isWinner ? 1 : 0);
-
-                updates.push(
-                    supabase
-                        .from('players')
-                        .update({
-                            current_points: newPoints,
-                            total_matches: newTotalMatches,
-                            wins: newWins
-                        })
-                        .eq('id', playerId)
-                );
-            }
-
+            const updates = playerIds.map((playerId) =>
+                supabase.rpc('increment_player_stats', {
+                    p_player_id: playerId,
+                    p_points_delta: isWinner ? pointDelta : -pointDelta,
+                    p_is_winner: isWinner,
+                })
+            );
             await Promise.all(updates);
         } catch (err) {
             console.error('Lỗi cập nhật stats người chơi:', err);
         }
-    }, [players]);
+    }, []);
 
     /* =======================
        GỢI Ý CẶP ĐẤU TIẾP THEO
@@ -734,8 +815,6 @@ function App() {
         } catch (e) {
             // ignore
         }
-
-        const rankingSnapshot = calculateRanking(true);
 
         const sumTeamPoints = (teamPlayers) => getTeamPoints(teamPlayers.map(p => (p && p.id) ? p.id : p), rankingSnapshot);
 
@@ -862,7 +941,7 @@ function App() {
         }
 
         return [];
-    }, [players, matches, calculateRanking, matchType]);
+    }, [players, matches, rankingSnapshot, matchType]);
 
     // keep suggestion state in sync with data changes
     useEffect(() => {
@@ -894,7 +973,6 @@ function App() {
     // Tính điểm và chênh lệch cho các trận gợi ý
     const suggestedMatchesWithDiff = useMemo(() => {
         if (!suggestedMatchesState || !suggestedMatchesState.length) return [];
-        const rankingSnapshot = calculateRanking(true);
         return suggestedMatchesState.map((m) => {
             const team1Details = (m.team1 || []).map(p => {
                 const id = (p && p.id) ? p.id : p;
@@ -912,7 +990,7 @@ function App() {
             const pts2 = team2Details.reduce((s, x) => s + (x.pts || 0), 0);
             return { ...m, team1Details, team2Details, pts1, pts2, diff: Math.abs(pts1 - pts2) };
         });
-    }, [suggestedMatchesState, players, matches, calculateRanking]);
+    }, [suggestedMatchesState, players, rankingSnapshot]);
 
     /* =======================
        MATCH HISTORY EDITING
@@ -926,19 +1004,18 @@ function App() {
     const [authModalOpen, setAuthModalOpen] = useState(false);
     const [authModalTitle, setAuthModalTitle] = useState("");
     const [authModalCallback, setAuthModalCallback] = useState(() => () => {});
-    const [authInput, setAuthInput] = useState("");
 
     const openAuthModal = (title, callback) => {
         setAuthModalTitle(title || "Xác nhận");
         setAuthModalCallback(() => callback || (() => {}));
-        setAuthInput("");
         setAuthModalOpen(true);
     };
 
-    const confirmAuth = () => {
+    // Called by AuthModal component with the value from its uncontrolled input
+    const confirmAuth = (code) => {
         setAuthModalOpen(false);
         try {
-            authModalCallback(authInput);
+            authModalCallback(code);
         } catch (e) {
             console.error('auth callback error', e);
         }
@@ -1115,6 +1192,8 @@ function App() {
             if (error) throw error;
 
             setMatches(matchesWithMeta);
+            // Sync players.current_points sau khi tính lại toàn bộ meta
+            await syncPointsToPlayers();
             cancelEditingMatch();
             addToast("Đã cập nhật lịch sử đấu và làm mới meta", "success");
         } catch (err) {
@@ -1505,92 +1584,52 @@ function App() {
         );
     };
 
-    // Auth modal markup - rendered into document.body to avoid stacking-context issues
-    const AuthModal = () => {
-        if (!authModalOpen) return null;
 
-        const modal = (
-            <div
-                onClick={(e) => {
-                    // close when clicking on backdrop (but not when clicking inside dialog)
-                    if (e.target === e.currentTarget) setAuthModalOpen(false);
-                }}
-                style={{
-                    position: 'fixed',
-                    inset: 0,
-                    background: 'rgba(2,6,23,0.6)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 2147483647,
-                    pointerEvents: 'auto',
-                }}
-            >
-                <div
-                    role="dialog"
-                    aria-modal="true"
-                    style={{
-                        background: '#fff',
-                        padding: 16,
-                        borderRadius: 8,
-                        width: 360,
-                        boxShadow: '0 10px 30px rgba(2,6,23,0.3)',
-                        pointerEvents: 'auto',
-                    }}
-                >
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>{authModalTitle}</div>
-                    <input
-                        autoFocus
-                        value={authInput}
-                        onChange={(e) => setAuthInput(e.target.value)}
-                        type="password"
-                        className="input-field"
-                        placeholder="Mã xác nhận"
-                        style={{ width: '100%', marginBottom: 8 }}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                        <button type="button" className="btn" onClick={() => setAuthModalOpen(false)}>Huỷ</button>
-                        <button type="button" className="btn btn-primary" onClick={confirmAuth}>Xác nhận</button>
-                    </div>
-                </div>
-            </div>
-        );
-
-        if (typeof document !== 'undefined' && createPortal) {
-            try {
-                return createPortal(modal, document.body);
-            } catch (e) {
-                // fallback to inline render if portal fails
-                return modal;
-            }
-        }
-
-        return modal;
-    };
+    const NAV_ITEMS = [
+        {
+            key: "ranking", label: "Xếp Hạng",
+            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+        },
+        {
+            key: "createMatch", label: "Trận Đấu",
+            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+        },
+        {
+            key: "players", label: "Người Chơi",
+            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+        },
+        {
+            key: "history", label: "Lịch Sử",
+            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+        },
+        {
+            key: "chart", label: "Biểu Đồ",
+            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>
+        },
+        {
+            key: "config", label: "Cấu Hình",
+            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" /></svg>
+        },
+    ];
 
     return (
         <div className="app-container">
             <header className="app-header">
-                <h1 className="header-title">BADMINTON LEGEND ALLIANCEITSC</h1>
+                <h1 className="header-title">BADMINTON LEGEND ALLIANCE</h1>
+                <p className="header-subtitle">Hệ thống theo dõi giải đấu cầu lông</p>
             </header>
 
             {/* ---- NAV ---- */}
             <nav className="nav-bar">
-                {[
-                    ["ranking", "Xếp Hạng"],
-                    ["createMatch", "Trận Đấu"],
-                    ["players", "Người Chơi"],
-                    ["history", "Lịch Sử"],
-                    ["chart", "Biểu Đồ"],
-                    ["config", "Cấu Hình"],
-                ].map(([key, label]) => (
+                {NAV_ITEMS.map(({ key, label, icon }) => (
                     <button
                         key={key}
-                        className={`nav-btn ${activeTab === key ? "active" : ""
-                            }`}
+                        className={`nav-btn ${activeTab === key ? "active" : ""}`}
                         onClick={() => setActiveTab(key)}
+                        aria-label={label}
                     >
-                        {label}
+                        {icon}
+                        <span className="nav-label">{label}</span>
                     </button>
                 ))}
             </nav>
@@ -1622,23 +1661,32 @@ function App() {
                             <section className="section">
                                 <h2 className="section-title">Bảng Xếp Hạng</h2>
 
+                                <div className="ranking-list">
                                 {rankingData.map((p, i) => {
                                     const winRate = p.totalMatches > 0
                                         ? Math.round((p.wins / p.totalMatches) * 100)
                                         : 0;
+                                    const medals = ['🥇', '🥈', '🥉'];
+                                    const rankClass = i < 3 ? `rank-${i + 1}` : '';
                                     return (
-                                        <div key={p.name + i} className="ranking-item">
-                                            <div className="rank-number">#{i + 1}</div>
+                                        <div key={p.name + i} className={`ranking-item ${rankClass}`}>
+                                            <div className="rank-number">
+                                                {i < 3 ? <span className="rank-medal">{medals[i]}</span> : `#${i + 1}`}
+                                            </div>
                                             <div className="player-details">
                                                 <div className="player-name">{p.name}</div>
                                                 <div className="player-stats">
-                                                    {p.totalMatches} trận • {p.wins} thắng • {winRate}% thắng
+                                                    {p.totalMatches} trận • {p.wins} thắng
                                                 </div>
                                             </div>
-                                            <div className="player-points">{p.points}</div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                                                <div className="player-points">{p.points}</div>
+                                                <span className="win-rate-badge">{winRate}%</span>
+                                            </div>
                                         </div>
                                     );
                                 })}
+                                </div>
                             </section>
                         )}
                         {/* Tab Tạo Trận Đấu */}
@@ -1781,9 +1829,8 @@ function App() {
                                     <div className="vs-divider">
                                         <div>VS</div>
                                         {team1.players.length > 0 && team2.players.length > 0 && (() => {
-                                            const currentRanking = calculateRanking(true);
-                                            const team1Pts = getTeamPoints(team1.players, currentRanking);
-                                            const team2Pts = getTeamPoints(team2.players, currentRanking);
+                                            const team1Pts = getTeamPoints(team1.players, rankingSnapshot);
+                                            const team2Pts = getTeamPoints(team2.players, rankingSnapshot);
                                             const diff = Math.abs(team1Pts - team2Pts);
                                             const bg = diff <= 10 ? '#ecfdf5' : diff <= 30 ? '#fff7ed' : '#fff1f2';
                                             const color = diff <= 10 ? '#166534' : diff <= 30 ? '#92400e' : '#991b1b';
@@ -2573,7 +2620,7 @@ function App() {
                                         })}
                                         disabled={isUpdatingMatches}
                                     >
-                                        {isUpdatingMatches ? 'Đang tính lại...' : '🔄 Tính lại toàn bộ database'}
+                                        {isUpdatingMatches ? 'Đang tính lại...' : 'Tính lại toàn bộ database'}
                                     </button>
                                 </div>
 
@@ -2681,7 +2728,12 @@ function App() {
                     </>
                 )}
             </main>
-            <AuthModal />
+            <AuthModal
+                open={authModalOpen}
+                title={authModalTitle}
+                onConfirm={confirmAuth}
+                onClose={() => setAuthModalOpen(false)}
+            />
         </div>
     );
 }
