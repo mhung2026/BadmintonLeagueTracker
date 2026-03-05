@@ -2310,11 +2310,11 @@ function App() {
                                                                 )}
                                                             </span>
                                                         </div>
-                                                        {/* NEW: show score nếu có */}
+                                                        {/* Score + delta badge */}
                                                         <div
                                                             style={{
                                                                 fontWeight: 700,
-                                                                margin: "6px 0",
+                                                                margin: "6px 0 2px",
                                                                 display: "flex",
                                                                 justifyContent: "center",
                                                                 alignItems: "center",
@@ -2339,6 +2339,71 @@ function App() {
                                                                 </span>
                                                             )}
                                                         </div>
+
+                                                        {/* === BREAKDOWN MINH BẠCH === */}
+                                                        {match.meta?.pointDelta != null && (() => {
+                                                            const m = match.meta;
+                                                            const scoreDiff = m.scoreDiff ?? Math.abs((match.score1 ?? 0) - (match.score2 ?? 0));
+                                                            const base = m.baseDelta ?? scoreDiff;
+                                                            const div = m.divisorUsed;
+                                                            const rDiff = m.ratingDiff ?? Math.abs((m.team1PtsBefore ?? 0) - (m.team2PtsBefore ?? 0));
+                                                            const winnerHigher = m.team1PtsBefore != null && m.team2PtsBefore != null
+                                                                ? (match.winner === 1 ? m.team1PtsBefore >= m.team2PtsBefore : m.team2PtsBefore >= m.team1PtsBefore)
+                                                                : null;
+
+                                                            let formulaText;
+                                                            if (!div || div === 1 || rDiff === 0) {
+                                                                formulaText = `${base} pts (tỉ số ngang)`;
+                                                            } else if (winnerHigher) {
+                                                                formulaText = `${base} ÷ ${div} = ${m.pointDelta} pts (đội mạnh thắng → ÷${div})`;
+                                                            } else {
+                                                                formulaText = `${base} × ${div} = ${m.pointDelta} pts (đội yếu thắng → ×${div})`;
+                                                            }
+
+                                                            return (
+                                                                <div style={{
+                                                                    background: '#f8fafc',
+                                                                    border: '1px solid #e2e8f0',
+                                                                    borderRadius: 8,
+                                                                    padding: '7px 10px',
+                                                                    marginBottom: 8,
+                                                                    fontSize: 11.5,
+                                                                    color: '#475569',
+                                                                    lineHeight: 1.6,
+                                                                    display: 'flex',
+                                                                    flexWrap: 'wrap',
+                                                                    gap: '2px 12px',
+                                                                }}>
+                                                                    {m.team1PtsBefore != null && (
+                                                                        <span>
+                                                                            <span style={{ color: '#1e40af', fontWeight: 600 }}>
+                                                                                {match.team1.map(id => getPlayerName(id)).join('+')}
+                                                                            </span>
+                                                                            {' '}{m.team1PtsBefore} pts
+                                                                        </span>
+                                                                    )}
+                                                                    {m.team1PtsBefore != null && m.team2PtsBefore != null && (
+                                                                        <span style={{ color: '#94a3b8' }}>vs</span>
+                                                                    )}
+                                                                    {m.team2PtsBefore != null && (
+                                                                        <span>
+                                                                            <span style={{ color: '#92400e', fontWeight: 600 }}>
+                                                                                {match.team2.map(id => getPlayerName(id)).join('+')}
+                                                                            </span>
+                                                                            {' '}{m.team2PtsBefore} pts
+                                                                        </span>
+                                                                    )}
+                                                                    {rDiff > 0 && (
+                                                                        <span style={{ color: '#64748b' }}>
+                                                                            · Δrating {rDiff}
+                                                                        </span>
+                                                                    )}
+                                                                    <span style={{ color: '#0f172a', fontWeight: 600, width: '100%' }}>
+                                                                        → {formulaText}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                         <div className="history-teams">
                                                             <div
                                                                 className={`history-team ${match.winner === 1
