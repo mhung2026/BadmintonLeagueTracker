@@ -1668,8 +1668,20 @@ function App() {
     return (
         <div className="app-container">
             <header className="app-header">
-                <h1 className="header-title">BADMINTON LEGEND ALLIANCE</h1>
-                <p className="header-subtitle">Hệ thống theo dõi giải đấu cầu lông</p>
+                <div className="header-logo-wrap" aria-hidden="true">
+                    {/* Shuttlecock icon */}
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="4" r="2"/>
+                        <path d="M12 6v4"/>
+                        <path d="M8 10c0 0 1 4 4 6s4 6 4 6"/>
+                        <path d="M16 10c0 0-1 4-4 6s-4 6-4 6"/>
+                        <path d="M9 22h6"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 className="header-title">BADMINTON LEGEND ALLIANCE</h1>
+                    <p className="header-subtitle">Hệ thống theo dõi giải đấu cầu lông</p>
+                </div>
             </header>
 
             {/* ---- NAV ---- */}
@@ -1867,10 +1879,12 @@ function App() {
                                             ) : (
                                                 team1.players.map((playerId) => (
                                                     <div key={playerId} className="player-tag">
+                                                        <PlayerAvatar player={getPlayerById(playerId)} size="sm" />
                                                         <span>{getPlayerName(playerId)}</span>
                                                         <button
                                                             className="remove-tag-btn"
                                                             onClick={() => removePlayerFromTeam(1, playerId)}
+                                                            aria-label={`Xoá ${getPlayerName(playerId)}`}
                                                         >
                                                             ✕
                                                         </button>
@@ -1889,7 +1903,8 @@ function App() {
                                                         className="player-select-btn"
                                                         onClick={() => addPlayerToTeam(1, player.id)}
                                                     >
-                                                        {player.name}
+                                                        <PlayerAvatar player={player} size="sm" />
+                                                        <span>{player.name}</span>
                                                     </button>
                                                 ))}
                                         </div>
@@ -1929,10 +1944,12 @@ function App() {
                                             ) : (
                                                 team2.players.map((playerId) => (
                                                     <div key={playerId} className="player-tag">
+                                                        <PlayerAvatar player={getPlayerById(playerId)} size="sm" />
                                                         <span>{getPlayerName(playerId)}</span>
                                                         <button
                                                             className="remove-tag-btn"
                                                             onClick={() => removePlayerFromTeam(2, playerId)}
+                                                            aria-label={`Xoá ${getPlayerName(playerId)}`}
                                                         >
                                                             ✕
                                                         </button>
@@ -1951,7 +1968,8 @@ function App() {
                                                         className="player-select-btn"
                                                         onClick={() => addPlayerToTeam(2, player.id)}
                                                     >
-                                                        {player.name}
+                                                        <PlayerAvatar player={player} size="sm" />
+                                                        <span>{player.name}</span>
                                                     </button>
                                                 ))}
                                         </div>
