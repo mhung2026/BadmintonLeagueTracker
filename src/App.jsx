@@ -1730,8 +1730,8 @@ function App() {
                                         <h3 style={{ margin: '0 0 8px 0', fontSize: 15 }}>Chọn 1 trong {suggestedMatchesWithDiff.length} gợi ý</h3>
                                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                             {suggestedMatchesWithDiff.map((m, idx) => {
-                                                const bg = (m.diff ?? 0) <= 1 ? '#ecfdf5' : (m.diff ?? 0) <= 3 ? '#fff7ed' : '#fff1f2';
-                                                const color = (m.diff ?? 0) <= 1 ? '#166534' : (m.diff ?? 0) <= 3 ? '#92400e' : '#991b1b';
+                                                const bg = (m.diff ?? 0) <= 20 ? '#ecfdf5' : (m.diff ?? 0) <= 50 ? '#fff7ed' : '#fff1f2';
+                                                const color = (m.diff ?? 0) <= 20 ? '#166534' : (m.diff ?? 0) <= 50 ? '#92400e' : '#991b1b';
                                                 return (
                                                     <div key={idx} style={{ flex: '1 1 240px', minWidth: 220, background: '#ffffff', border: '1px solid #e6eef7', borderRadius: 8, padding: 8 }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1832,8 +1832,8 @@ function App() {
                                             const team1Pts = getTeamPoints(team1.players, rankingSnapshot);
                                             const team2Pts = getTeamPoints(team2.players, rankingSnapshot);
                                             const diff = Math.abs(team1Pts - team2Pts);
-                                            const bg = diff <= 10 ? '#ecfdf5' : diff <= 30 ? '#fff7ed' : '#fff1f2';
-                                            const color = diff <= 10 ? '#166534' : diff <= 30 ? '#92400e' : '#991b1b';
+                                            const bg = diff <= 20 ? '#ecfdf5' : diff <= 50 ? '#fff7ed' : '#fff1f2';
+                                            const color = diff <= 20 ? '#166534' : diff <= 50 ? '#92400e' : '#991b1b';
                                             return (
                                                 <div style={{
                                                     marginTop: 8,
@@ -1844,7 +1844,7 @@ function App() {
                                                     fontWeight: 600,
                                                     fontSize: 11
                                                 }}>
-                                                    Δ {diff}
+                                                    Δ rating {diff}
                                                 </div>
                                             );
                                         })()}
@@ -2189,16 +2189,16 @@ function App() {
                                                                 match.score2 != null
                                                                 ? `${match.score1} - ${match.score2}`
                                                                 : ""}
-                                                            {match.meta?.ratingDiff != null && (
+                                                            {match.meta?.pointDelta != null && (
                                                                 <span style={{
                                                                     fontSize: 11,
                                                                     fontWeight: 600,
                                                                     padding: '4px 8px',
                                                                     borderRadius: 999,
-                                                                    background: match.meta.ratingDiff <= 10 ? '#ecfdf5' : match.meta.ratingDiff <= 30 ? '#fff7ed' : '#fff1f2',
-                                                                    color: match.meta.ratingDiff <= 10 ? '#166534' : match.meta.ratingDiff <= 30 ? '#92400e' : '#991b1b'
+                                                                    background: '#dbeafe',
+                                                                    color: '#1e40af'
                                                                 }}>
-                                                                    Δ {match.meta.ratingDiff}
+                                                                    ±{match.meta.pointDelta} pts
                                                                 </span>
                                                             )}
                                                         </div>
