@@ -131,6 +131,10 @@ function App() {
     const [isCreatingMatch, setIsCreatingMatch] = useState(false);
     const [isSavingConfig, setIsSavingConfig] = useState(false);
 
+    // Avatar states
+    const [editingAvatarId, setEditingAvatarId] = useState(null);
+    const [editingAvatarUrl, setEditingAvatarUrl] = useState("");
+
     /* =======================
        HELPERS
     ======================= */
@@ -197,7 +201,8 @@ function App() {
             disabled: !!p.disabled,
             current_points: p.current_points ?? 0,
             total_matches: p.total_matches ?? 0,
-            wins: p.wins ?? 0
+            wins: p.wins ?? 0,
+            avatar_url: p.avatar_url ?? null,
         })));
         return data || [];
     }, []);
@@ -344,6 +349,28 @@ function App() {
     const cancelEditingPlayer = () => {
         setEditingPlayerId(null);
         setEditingPlayerName("");
+    };
+
+    const savePlayerAvatar = async (playerId, url) => {
+        const trimmed = url.trim();
+        const { error } = await supabase
+            .from("players")
+            .update({ avatar_url: trimmed || null })
+            .eq("id", playerId);
+
+        if (error) {
+            addToast("Không thể lưu avatar. Vui lòng thử lại.", "error");
+            return;
+        }
+
+        setPlayers((prev) =>
+            prev.map((p) =>
+                p.id === playerId ? { ...p, avatar_url: trimmed || null } : p
+            )
+        );
+        setEditingAvatarId(null);
+        setEditingAvatarUrl("");
+        addToast("Đã cập nhật avatar!", "success");
     };
 
     const savePlayerName = async () => {
@@ -1296,7 +1323,33 @@ function App() {
     /* =======================
        RENDER
     ======================= */
-    // Simple SVG Line Chart Component with better date handling
+
+    // PlayerAvatar: shows avatar image or initials fallback
+    const PlayerAvatar = ({ player, size = "md" }) => {
+        const sizeClass = size === "sm" ? "player-avatar-sm player-avatar-placeholder-sm"
+            : size === "lg" ? "player-avatar-lg player-avatar-placeholder-lg"
+            : "";
+        const initials = (player?.name || "?").charAt(0).toUpperCase();
+
+        if (player?.avatar_url) {
+            return (
+                <img
+                    src={player.avatar_url}
+                    alt={player.name}
+                    className={`player-avatar ${size === "sm" ? "player-avatar-sm" : size === "lg" ? "player-avatar-lg" : ""}`}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling?.style && (e.currentTarget.nextSibling.style.display = 'flex'); }}
+                />
+            );
+        }
+        return (
+            <div className={`player-avatar-placeholder ${size === "sm" ? "player-avatar-placeholder-sm" : size === "lg" ? "player-avatar-placeholder-lg" : ""}`} aria-hidden="true">
+                {initials}
+            </div>
+        );
+    };
+
+    const getPlayerById = (id) => players.find((p) => p.id === id) || null;
+
     const LineChart = ({ data }) => {
         const [hoveredPoint, setHoveredPoint] = useState(null);
 
@@ -1595,16 +1648,16 @@ function App() {
             icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
         },
         {
-            key: "players", label: "Người Chơi",
-            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-        },
-        {
             key: "history", label: "Lịch Sử",
             icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
         },
         {
             key: "chart", label: "Biểu Đồ",
             icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>
+        },
+        {
+            key: "players", label: "Người Chơi",
+            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
         },
         {
             key: "config", label: "Cấu Hình",
@@ -1666,13 +1719,22 @@ function App() {
                                     const winRate = p.totalMatches > 0
                                         ? Math.round((p.wins / p.totalMatches) * 100)
                                         : 0;
-                                    const medals = ['🥇', '🥈', '🥉'];
                                     const rankClass = i < 3 ? `rank-${i + 1}` : '';
+                                    const playerObj = players.find(pl => pl.name === p.name);
+                                    const medalSvg = [
+                                        // Gold
+                                        <svg key="g" viewBox="0 0 24 24" width="22" height="22" fill="none"><circle cx="12" cy="12" r="9" fill="#FBBF24" stroke="#F59E0B" strokeWidth="1.5"/><text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="800" fill="#78350F">1</text></svg>,
+                                        // Silver
+                                        <svg key="s" viewBox="0 0 24 24" width="22" height="22" fill="none"><circle cx="12" cy="12" r="9" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="1.5"/><text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="800" fill="#1E293B">2</text></svg>,
+                                        // Bronze
+                                        <svg key="b" viewBox="0 0 24 24" width="22" height="22" fill="none"><circle cx="12" cy="12" r="9" fill="#FDBA74" stroke="#FB923C" strokeWidth="1.5"/><text x="12" y="16.5" textAnchor="middle" fontSize="11" fontWeight="800" fill="#7C2D12">3</text></svg>,
+                                    ];
                                     return (
                                         <div key={p.name + i} className={`ranking-item ${rankClass}`}>
                                             <div className="rank-number">
-                                                {i < 3 ? <span className="rank-medal">{medals[i]}</span> : `#${i + 1}`}
+                                                {i < 3 ? <span className="rank-medal">{medalSvg[i]}</span> : `#${i + 1}`}
                                             </div>
+                                            <PlayerAvatar player={playerObj} size="md" />
                                             <div className="player-details">
                                                 <div className="player-name">{p.name}</div>
                                                 <div className="player-stats">
@@ -1726,52 +1788,60 @@ function App() {
 
                                 {/* Gợi ý cặp đấu (nếu có) */}
                                 {suggestedMatchesWithDiff && suggestedMatchesWithDiff.length > 0 && (
-                                    <div style={{ margin: '12px 0 18px 0' }}>
-                                        <h3 style={{ margin: '0 0 8px 0', fontSize: 15 }}>Chọn 1 trong {suggestedMatchesWithDiff.length} gợi ý</h3>
-                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    <div style={{ margin: '0 0 20px 0' }}>
+                                        <h3 style={{ margin: '0 0 10px 0', fontSize: 14, fontWeight: 700, color: '#374151' }}>
+                                            Gợi ý cặp đấu ({suggestedMatchesWithDiff.length} lựa chọn)
+                                        </h3>
+                                        <div className="suggestion-grid">
                                             {suggestedMatchesWithDiff.map((m, idx) => {
-                                                const bg = (m.diff ?? 0) <= 20 ? '#ecfdf5' : (m.diff ?? 0) <= 50 ? '#fff7ed' : '#fff1f2';
-                                                const color = (m.diff ?? 0) <= 20 ? '#166534' : (m.diff ?? 0) <= 50 ? '#92400e' : '#991b1b';
+                                                const diffVal = m.diff ?? 0;
+                                                const diffBg = diffVal <= 20 ? '#dcfce7' : diffVal <= 50 ? '#fef3c7' : '#fee2e2';
+                                                const diffColor = diffVal <= 20 ? '#166534' : diffVal <= 50 ? '#92400e' : '#991b1b';
                                                 return (
-                                                    <div key={idx} style={{ flex: '1 1 240px', minWidth: 220, background: '#ffffff', border: '1px solid #e6eef7', borderRadius: 8, padding: 8 }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                            <div style={{ fontSize: 13, fontWeight: 600 }}>Lựa chọn {idx + 1}</div>
-                                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                                <div style={{ padding: '4px 8px', borderRadius: 999, background: bg, color, fontWeight: 600, fontSize: 11 }}>Δ {m.diff ?? 0}</div>
-                                                                <button className="btn btn-primary" style={{ padding: '6px 8px', fontSize: 13 }} onClick={() => applySuggestion(m)}>Chọn</button>
+                                                    <div key={idx} className="suggestion-card">
+                                                        <div className="suggestion-card-header">
+                                                            <span className="suggestion-label">Lựa chọn {idx + 1}</span>
+                                                            <div className="suggestion-actions">
+                                                                <span className="diff-badge" style={{ background: diffBg, color: diffColor }}>
+                                                                    Δ {diffVal}
+                                                                </span>
+                                                                <button
+                                                                    className="btn btn-primary btn-compact"
+                                                                    style={{ padding: '6px 12px', fontSize: 13, minHeight: 'unset' }}
+                                                                    onClick={() => applySuggestion(m)}
+                                                                >
+                                                                    Chọn
+                                                                </button>
                                                             </div>
                                                         </div>
-
-                                                        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'stretch' }}>
-                                                            <div style={{ flex: 1, background: '#fafafa', padding: 6, borderRadius: 6 }}>
-                                                                <div style={{ fontSize: 12, color: '#334155', marginBottom: 6, fontWeight: 700 }}>A • {m.pts1 ?? 0}</div>
-                                                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                        <div className="suggestion-teams">
+                                                            <div className="suggestion-team">
+                                                                <div className="suggestion-team-label">A • {m.pts1 ?? 0}</div>
+                                                                <div className="suggestion-team-players">
                                                                     {(m.team1Details || m.team1 || []).map((p, i) => {
                                                                         const id = (p && p.id) ? p.id : i;
                                                                         const name = (p && (p.name || p)) || String(p);
                                                                         const pts = p && (p.pts !== undefined) ? p.pts : null;
                                                                         return (
-                                                                            <div key={id} style={{ background: '#e6eef7', padding: '4px 6px', borderRadius: 999, fontSize: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                                                <span>{name}</span>
-                                                                                {pts !== null && <span style={{ fontSize: 11, color: '#0f172a', opacity: 0.7 }}>• {pts}</span>}
-                                                                            </div>
+                                                                            <span key={id} className="suggestion-player-chip team-a">
+                                                                                {name}{pts !== null && <span style={{ opacity: 0.7, fontSize: 11 }}>·{pts}</span>}
+                                                                            </span>
                                                                         );
                                                                     })}
                                                                 </div>
                                                             </div>
-                                                            <div style={{ width: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>vs</div>
-                                                            <div style={{ flex: 1, background: '#fafafa', padding: 6, borderRadius: 6 }}>
-                                                                <div style={{ fontSize: 12, color: '#334155', marginBottom: 6, fontWeight: 700 }}>B • {m.pts2 ?? 0}</div>
-                                                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                            <div className="suggestion-vs">VS</div>
+                                                            <div className="suggestion-team">
+                                                                <div className="suggestion-team-label">B • {m.pts2 ?? 0}</div>
+                                                                <div className="suggestion-team-players">
                                                                     {(m.team2Details || m.team2 || []).map((p, i) => {
                                                                         const id = (p && p.id) ? p.id : i;
                                                                         const name = (p && (p.name || p)) || String(p);
                                                                         const pts = p && (p.pts !== undefined) ? p.pts : null;
                                                                         return (
-                                                                            <div key={id} style={{ background: '#fde68a', padding: '4px 6px', borderRadius: 999, fontSize: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                                                <span>{name}</span>
-                                                                                {pts !== null && <span style={{ fontSize: 11, color: '#92400e', opacity: 0.8 }}>• {pts}</span>}
-                                                                            </div>
+                                                                            <span key={id} className="suggestion-player-chip team-b">
+                                                                                {name}{pts !== null && <span style={{ opacity: 0.7, fontSize: 11 }}>·{pts}</span>}
+                                                                            </span>
                                                                         );
                                                                     })}
                                                                 </div>
@@ -1935,20 +2005,12 @@ function App() {
                                 )}
 
                                 {/* Chọn đội thắng và lưu trận */}
-                                <div
-                                    className="result-buttons"
-                                    style={{
-                                        marginTop: 12,
-                                        width: "100%",
-                                        display: "flex",
-                                        gap: 10,
-                                        alignItems: "center",
-                                    }}
-                                >
+                                <div className="result-buttons">
                                     <button
                                         className="btn btn-primary"
                                         onClick={() => createMatch()}
                                         disabled={isCreatingMatch}
+                                        aria-busy={isCreatingMatch}
                                     >
                                         {isCreatingMatch ? "Đang lưu..." : "Lưu kết quả trận đấu"}
                                     </button>
@@ -2005,10 +2067,11 @@ function App() {
                                                 >
                                                     {editingPlayerId === player.id ? (
                                                         <>
+                                                            <PlayerAvatar player={player} size="lg" />
                                                             <input
                                                                 type="text"
                                                                 className="input-field"
-                                                                style={{ flex: 1, marginRight: 8 }}
+                                                                style={{ flex: 1, marginRight: 8, marginLeft: 10 }}
                                                                 value={editingPlayerName}
                                                                 onChange={(e) => setEditingPlayerName(e.target.value)}
                                                                 onKeyDown={(e) => {
@@ -2027,16 +2090,72 @@ function App() {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <div className="player-name" style={{ flex: 1 }}>
-                                                                {player.name} {player.disabled ? <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 8 }}>(Vô hiệu)</span> : null}
+                                                            {/* Avatar với click để đổi */}
+                                                            <div
+                                                                className="avatar-upload-wrap"
+                                                                title="Click để đổi ảnh đại diện"
+                                                                onClick={() => {
+                                                                    setEditingAvatarId(editingAvatarId === player.id ? null : player.id);
+                                                                    setEditingAvatarUrl(player.avatar_url || "");
+                                                                }}
+                                                            >
+                                                                <PlayerAvatar player={player} size="lg" />
+                                                                <div className="avatar-upload-overlay">
+                                                                    {/* Camera SVG icon */}
+                                                                    <svg className="avatar-upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                                                                        <circle cx="12" cy="13" r="4"/>
+                                                                    </svg>
+                                                                </div>
                                                             </div>
-                                                            <div className="player-actions" style={{ display: "flex", gap: 6 }}>
+                                                            <div style={{ flex: 1, minWidth: 0, marginLeft: 12 }}>
+                                                                <div className="player-name">
+                                                                    {player.name}{player.disabled ? <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 8 }}>(Vô hiệu)</span> : null}
+                                                                </div>
+                                                                {/* Avatar URL form inline */}
+                                                                {editingAvatarId === player.id && (
+                                                                    <div className="avatar-url-form">
+                                                                        <input
+                                                                            type="url"
+                                                                            className="input-field"
+                                                                            placeholder="Dán link ảnh (https://...)"
+                                                                            value={editingAvatarUrl}
+                                                                            autoFocus
+                                                                            onChange={(e) => setEditingAvatarUrl(e.target.value)}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === "Enter") savePlayerAvatar(player.id, editingAvatarUrl);
+                                                                                if (e.key === "Escape") { setEditingAvatarId(null); setEditingAvatarUrl(""); }
+                                                                            }}
+                                                                        />
+                                                                        <button
+                                                                            className="btn btn-primary btn-compact"
+                                                                            style={{ padding: '6px 12px', minHeight: 'unset', fontSize: 13 }}
+                                                                            type="button"
+                                                                            onClick={() => savePlayerAvatar(player.id, editingAvatarUrl)}
+                                                                        >
+                                                                            Lưu
+                                                                        </button>
+                                                                        {player.avatar_url && (
+                                                                            <button
+                                                                                className="btn-delete btn-compact"
+                                                                                style={{ minHeight: 'unset', fontSize: 13 }}
+                                                                                type="button"
+                                                                                title="Xoá ảnh đại diện"
+                                                                                onClick={() => savePlayerAvatar(player.id, "")}
+                                                                            >
+                                                                                Xoá ảnh
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="player-actions" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                                                                 <button
                                                                     className="btn"
                                                                     type="button"
                                                                     onClick={() => startEditingPlayer(player)}
                                                                 >
-                                                                    Sửa
+                                                                    Sửa tên
                                                                 </button>
                                                                 <button
                                                                     className={player.disabled ? 'btn' : 'btn-warning'}
@@ -2409,11 +2528,13 @@ function App() {
                                                                 </div>
                                                             </div>
                                                         ) : (
-                                                            <div style={{ marginTop: 8 }}>
+                                                            <div className="history-item-actions">
                                                                 <button
-                                                                    className="btn"
+                                                                    className="btn btn-compact"
+                                                                    style={{ padding: '7px 14px', fontSize: 13, minHeight: 'unset' }}
                                                                     type="button"
                                                                     onClick={() => startEditingMatch(match)}
+                                                                    aria-label="Chỉnh sửa trận đấu này"
                                                                 >
                                                                     Chỉnh sửa
                                                                 </button>
@@ -2424,30 +2545,23 @@ function App() {
                                         </div>
                                         {/* Pagination controls */}
                                         {totalPages > 1 && (
-                                            <div className="pagination" style={{
-                                                display: 'flex',
-                                                justifyContent: 'center',
-                                                alignItems: 'center',
-                                                gap: 8,
-                                                marginTop: 16,
-                                                flexWrap: 'wrap'
-                                            }}>
+                                            <div className="pagination">
                                                 <button
                                                     className="btn"
                                                     onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
                                                     disabled={historyPage === 1}
-                                                    style={{ padding: '8px 12px' }}
+                                                    aria-label="Trang trước"
                                                 >
                                                     ← Trước
                                                 </button>
-                                                <span style={{ fontSize: 14, color: '#64748b' }}>
+                                                <span className="pagination-info">
                                                     Trang {historyPage} / {totalPages} ({filteredMatches.length} trận)
                                                 </span>
                                                 <button
                                                     className="btn"
                                                     onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
                                                     disabled={historyPage === totalPages}
-                                                    style={{ padding: '8px 12px' }}
+                                                    aria-label="Trang sau"
                                                 >
                                                     Sau →
                                                 </button>
@@ -2464,34 +2578,16 @@ function App() {
 
                                 {/* WRAPPER CHỐNG TRÀN */}
                                 <div style={{ width: "100%", overflowX: "auto" }}>
-                                    <table
-                                        style={{
-                                            width: "100%",
-                                            borderCollapse: "collapse",
-                                            tableLayout: "fixed",
-                                        }}
-                                    >
+                                    <table className="config-table">
                                         <thead>
                                             <tr>
-                                                <th
-                                                    style={{
-                                                        textAlign: "left",
-                                                        width: "45%",
-                                                        paddingRight: 16,
-                                                    }}
-                                                >
+                                                <th style={{ width: "45%", paddingRight: 16 }}>
                                                     Chênh lệch tối đa
                                                 </th>
-                                                <th
-                                                    style={{
-                                                        textAlign: "left",
-                                                        width: "45%",
-                                                        paddingLeft: 16,
-                                                    }}
-                                                >
+                                                <th style={{ width: "45%", paddingLeft: 16 }}>
                                                     Hệ số chia
                                                 </th>
-                                                <th style={{ width: 40 }} />
+                                                <th style={{ width: 60 }} />
                                             </tr>
                                         </thead>
 
@@ -2684,10 +2780,10 @@ function App() {
                                 {/* Stats summary */}
                                 {chartPlayerIds.length > 0 && (
                                     <div style={{ marginTop: 20 }}>
-                                        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
+                                        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#374151' }}>
                                             Thống kê
                                         </h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                                        <div className="stats-grid">
                                             {chartPlayerIds.map(playerId => {
                                                 const player = players.find(p => p.id === playerId);
                                                 if (!player) return null;
@@ -2696,23 +2792,15 @@ function App() {
                                                     ? Math.round((ranking.wins / ranking.totalMatches) * 100)
                                                     : 0;
                                                 return (
-                                                    <div
-                                                        key={playerId}
-                                                        style={{
-                                                            background: '#fafafa',
-                                                            padding: 12,
-                                                            borderRadius: 8,
-                                                            border: '1px solid #e5e7eb'
-                                                        }}
-                                                    >
-                                                        <div style={{ fontWeight: 600, marginBottom: 6 }}>{player.name}</div>
-                                                        <div style={{ fontSize: 13, color: '#6b7280' }}>
-                                                            Điểm: <span style={{ fontWeight: 600, color: '#374151' }}>{ranking?.points ?? 0}</span>
+                                                    <div key={playerId} className="stats-card">
+                                                        <div className="stats-card-name">{player.name}</div>
+                                                        <div className="stats-card-row">
+                                                            Điểm: <strong>{ranking?.points ?? 0}</strong>
                                                         </div>
-                                                        <div style={{ fontSize: 13, color: '#6b7280' }}>
-                                                            Trận: {ranking?.totalMatches ?? 0} •
-                                                            Thắng: {ranking?.wins ?? 0} •
-                                                            {winRate}%
+                                                        <div className="stats-card-row">
+                                                            {ranking?.totalMatches ?? 0} trận &nbsp;•&nbsp;
+                                                            {ranking?.wins ?? 0} thắng &nbsp;•&nbsp;
+                                                            <strong>{winRate}%</strong>
                                                         </div>
                                                     </div>
                                                 );

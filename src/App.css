@@ -628,16 +628,343 @@ body {
 
 /* === RESULT BUTTONS === */
 .result-buttons {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    display: flex;
+    gap: 10px;
     margin-top: 20px;
+    width: 100%;
+    align-items: center;
 }
 
 .result-buttons .btn {
-    padding: 12px 16px;
-    width: 100%;
+    padding: 12px 20px;
     justify-content: center;
+    min-height: 44px;
+    flex: 1;
+}
+
+/* === SUGGESTION CARDS === */
+.suggestion-grid {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.suggestion-card {
+    flex: 1 1 240px;
+    min-width: 220px;
+    background: #ffffff;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: default;
+}
+
+.suggestion-card:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+}
+
+.suggestion-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.suggestion-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #374151;
+}
+
+.suggestion-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.diff-badge {
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 11px;
+}
+
+.suggestion-teams {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.suggestion-team {
+    flex: 1;
+    background: #f8fafc;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.suggestion-team-label {
+    font-size: 11px;
+    color: #374151;
+    margin-bottom: 6px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.suggestion-team-players {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.suggestion-player-chip {
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    font-weight: 500;
+}
+
+.suggestion-player-chip.team-a {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.suggestion-player-chip.team-b {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.suggestion-vs {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 0 2px;
+}
+
+/* === STATS CARD (Chart tab) === */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.stats-card {
+    background: #f8fafc;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1.5px solid #e2e8f0;
+    transition: border-color 0.2s;
+}
+
+.stats-card:hover {
+    border-color: #93c5fd;
+}
+
+.stats-card-name {
+    font-weight: 700;
+    font-size: 14px;
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+
+.stats-card-row {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 3px;
+}
+
+.stats-card-row strong {
+    color: #0f172a;
+    font-weight: 700;
+}
+
+/* === CONFIG TABLE === */
+.config-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.config-table th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0 4px 10px;
+}
+
+.config-table td {
+    padding: 3px 4px;
+    vertical-align: middle;
+}
+
+.config-table .input-field {
+    width: 100%;
+    min-height: 44px;
+}
+
+/* === PAGINATION === */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.pagination .btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 16px;
+}
+
+.pagination-info {
+    font-size: 13px;
+    color: #64748b;
+    padding: 0 4px;
+}
+
+/* === TOUCH TARGET HELPERS === */
+.btn,
+.filter-chip,
+.nav-btn,
+.player-select-btn,
+.filter-reset {
+    min-height: 44px;
+}
+
+/* Compact variants that explicitly opt out of 44px */
+.btn-compact {
+    min-height: unset;
+}
+
+/* === EMPTY STATE === */
+.empty-state-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+    opacity: 0.4;
+}
+
+/* === AVATAR === */
+.player-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 2px solid #e2e8f0;
+    background: #f1f5f9;
+    display: block;
+}
+
+.player-avatar-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    border: 2px solid #93c5fd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1d4ed8;
+    flex-shrink: 0;
+    user-select: none;
+    text-transform: uppercase;
+}
+
+/* Larger avatar for player list */
+.player-avatar-lg,
+.player-avatar-placeholder-lg {
+    width: 48px;
+    height: 48px;
+    font-size: 18px;
+}
+
+/* Small avatar for tags/chips */
+.player-avatar-sm,
+.player-avatar-placeholder-sm {
+    width: 28px;
+    height: 28px;
+    font-size: 11px;
+    border-width: 1.5px;
+}
+
+/* Avatar upload area */
+.avatar-upload-wrap {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+}
+
+.avatar-upload-wrap:hover .avatar-upload-overlay {
+    opacity: 1;
+}
+
+.avatar-upload-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+    cursor: pointer;
+}
+
+.avatar-upload-icon {
+    color: #fff;
+    width: 18px;
+    height: 18px;
+}
+
+/* Avatar input for URL field */
+.avatar-url-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.avatar-url-form .input-field {
+    flex: 1;
+    min-width: 160px;
+    font-size: 13px;
+    padding: 8px 10px;
+    min-height: 38px;
+}
+
+/* rank-1 avatar gold border */
+.ranking-item.rank-1 .player-avatar,
+.ranking-item.rank-1 .player-avatar-placeholder {
+    border-color: #fde047;
+}
+
+/* === HISTORY ITEM ACTIONS === */
+.history-item-actions {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 /* === HISTORY === */
