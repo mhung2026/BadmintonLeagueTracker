@@ -7,6 +7,32 @@ import { useToast } from "./Toast.jsx";
 import { createPortal } from "react-dom";
 import { SkeletonRanking, SkeletonCard, SkeletonTable } from "./Skeleton.jsx";
 
+// ─── PLAYER AVATAR ─────────────────────────────────────────────────────────
+// Định nghĩa ngoài App để tránh unmount/remount mỗi lần App re-render → hết chớp ảnh.
+function PlayerAvatar({ player, size = "md" }) {
+    const initials = (player?.name || "?").charAt(0).toUpperCase();
+    const sizeImgClass = size === "sm" ? "player-avatar-sm"
+        : size === "lg" ? "player-avatar-lg" : "";
+    const sizePlaceholderClass = size === "sm" ? "player-avatar-placeholder-sm"
+        : size === "lg" ? "player-avatar-placeholder-lg" : "";
+
+    if (player?.avatar_url) {
+        return (
+            <img
+                src={player.avatar_url}
+                alt={player.name}
+                className={`player-avatar ${sizeImgClass}`}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+        );
+    }
+    return (
+        <div className={`player-avatar-placeholder ${sizePlaceholderClass}`} aria-hidden="true">
+            {initials}
+        </div>
+    );
+}
+
 // ─── AUTH MODAL ────────────────────────────────────────────────────────────
 // Tách ra ngoài App để tránh re-render toàn bộ App khi user gõ phím.
 // Dùng uncontrolled input (useRef) → không setState mỗi keystroke → hết lag.
@@ -1324,29 +1350,7 @@ function App() {
        RENDER
     ======================= */
 
-    // PlayerAvatar: shows avatar image or initials fallback
-    const PlayerAvatar = ({ player, size = "md" }) => {
-        const sizeClass = size === "sm" ? "player-avatar-sm player-avatar-placeholder-sm"
-            : size === "lg" ? "player-avatar-lg player-avatar-placeholder-lg"
-            : "";
-        const initials = (player?.name || "?").charAt(0).toUpperCase();
-
-        if (player?.avatar_url) {
-            return (
-                <img
-                    src={player.avatar_url}
-                    alt={player.name}
-                    className={`player-avatar ${size === "sm" ? "player-avatar-sm" : size === "lg" ? "player-avatar-lg" : ""}`}
-                    onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling?.style && (e.currentTarget.nextSibling.style.display = 'flex'); }}
-                />
-            );
-        }
-        return (
-            <div className={`player-avatar-placeholder ${size === "sm" ? "player-avatar-placeholder-sm" : size === "lg" ? "player-avatar-placeholder-lg" : ""}`} aria-hidden="true">
-                {initials}
-            </div>
-        );
-    };
+    // PlayerAvatar defined outside App — see below
 
     const getPlayerById = (id) => players.find((p) => p.id === id) || null;
 
