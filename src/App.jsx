@@ -2314,36 +2314,64 @@ function App() {
                                                                 )}
                                                             </span>
                                                         </div>
-                                                        {/* ── TEAMS + SCORE ── */}
+                                                        {/* ── TEAMS + SCORE + FORMULA ── */}
                                                         {(() => {
-                                                            const delta = match.meta?.pointDelta;
+                                                            const m = match.meta || {};
+                                                            const delta = m.pointDelta;
+                                                            const base = m.baseDelta;
+                                                            const div = m.divisorUsed;
+                                                            const rDiff = m.ratingDiff ?? 0;
                                                             const team1Names = match.team1.map(id => getPlayerName(id)).join(", ");
                                                             const team2Names = match.team2.map(id => getPlayerName(id)).join(", ");
                                                             const scoreText = match.score1 != null && match.score2 != null
                                                                 ? `${match.score1} - ${match.score2}` : null;
+
+                                                            // Build formula string
+                                                            const winnerHigher = m.team1PtsBefore != null && m.team2PtsBefore != null
+                                                                ? (match.winner === 1 ? m.team1PtsBefore >= m.team2PtsBefore : m.team2PtsBefore >= m.team1PtsBefore)
+                                                                : null;
+                                                            let formula = null;
+                                                            if (delta != null && base != null) {
+                                                                if (!div || div === 1 || rDiff === 0) {
+                                                                    formula = `cách biệt ${base} → ±${delta} pts`;
+                                                                } else if (winnerHigher) {
+                                                                    formula = `${base} ÷ ${div} = ${delta} pts · đội mạnh thắng`;
+                                                                } else {
+                                                                    formula = `${base} × ${div} = ${delta} pts · đội yếu thắng`;
+                                                                }
+                                                            }
+
                                                             return (
-                                                                <div className="history-teams">
-                                                                    <div className={`history-team ${match.winner === 1 ? "winner" : ""}`}>
-                                                                        <div>{team1Names}</div>
-                                                                        {delta != null && (
-                                                                            <div style={{ fontSize: 12, fontWeight: 700, marginTop: 3, color: match.winner === 1 ? '#059669' : '#dc2626' }}>
-                                                                                {match.winner === 1 ? '+' : '-'}{delta}
-                                                                            </div>
-                                                                        )}
+                                                                <>
+                                                                    <div className="history-teams">
+                                                                        <div className={`history-team ${match.winner === 1 ? "winner" : ""}`}>
+                                                                            <div>{team1Names}</div>
+                                                                            {delta != null && (
+                                                                                <div style={{ fontSize: 12, fontWeight: 700, marginTop: 3, color: match.winner === 1 ? '#059669' : '#dc2626' }}>
+                                                                                    {match.winner === 1 ? '+' : '-'}{delta}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="vs">
+                                                                            {scoreText && <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{scoreText}</div>}
+                                                                            <div>vs</div>
+                                                                        </div>
+                                                                        <div className={`history-team ${match.winner === 2 ? "winner" : ""}`}>
+                                                                            <div>{team2Names}</div>
+                                                                            {delta != null && (
+                                                                                <div style={{ fontSize: 12, fontWeight: 700, marginTop: 3, color: match.winner === 2 ? '#059669' : '#dc2626' }}>
+                                                                                    {match.winner === 2 ? '+' : '-'}{delta}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="vs">
-                                                                        {scoreText && <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{scoreText}</div>}
-                                                                        <div>vs</div>
-                                                                    </div>
-                                                                    <div className={`history-team ${match.winner === 2 ? "winner" : ""}`}>
-                                                                        <div>{team2Names}</div>
-                                                                        {delta != null && (
-                                                                            <div style={{ fontSize: 12, fontWeight: 700, marginTop: 3, color: match.winner === 2 ? '#059669' : '#dc2626' }}>
-                                                                                {match.winner === 2 ? '+' : '-'}{delta}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
+                                                                    {formula && (
+                                                                        <div style={{ marginTop: 6, padding: '5px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 11.5, color: '#475569', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                                                            <span style={{ color: '#94a3b8' }}>Δ rating {rDiff}</span>
+                                                                            <span style={{ fontWeight: 600, color: '#0f172a' }}>{formula}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </>
                                                             );
                                                         })()}
                                                         {editingMatchId === match.id ? (
