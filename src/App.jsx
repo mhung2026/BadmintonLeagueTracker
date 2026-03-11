@@ -584,8 +584,25 @@ function App() {
             await updatePlayerStats(team1.players, pointDelta, winner === 1);
             await updatePlayerStats(team2.players, pointDelta, winner === 2);
 
-            await fetchMatches();
-            await fetchPlayers(); // Reload players to get updated stats
+            // Optimistic local update — cập nhật state ngay để UI phản ánh đúng
+            // mà không cần đợi DB read-after-write consistency
+            setPlayers(prev => prev.map(p => {
+                const inTeam1 = team1.players.includes(p.id);
+                const inTeam2 = team2.players.includes(p.id);
+                if (!inTeam1 && !inTeam2) return p;
+                const isWin = (inTeam1 && winner === 1) || (inTeam2 && winner === 2);
+                return {
+                    ...p,
+                    current_points: (p.current_points ?? 0) + (isWin ? pointDelta : -pointDelta),
+                    total_matches: (p.total_matches ?? 0) + 1,
+                    wins: (p.wins ?? 0) + (isWin ? 1 : 0),
+                };
+            }));
+            setMatches(prev => [...prev, { ...newMatch, id: Date.now() }]);
+
+            // Background: fetch từ DB để đồng bộ chính xác (không block UI)
+            fetchMatches();
+            fetchPlayers();
 
             try {
                 // immediately recompute suggestions using the fresh data
