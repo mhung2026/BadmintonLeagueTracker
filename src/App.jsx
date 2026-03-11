@@ -677,7 +677,7 @@ function App() {
     // so calculateRanking(true) is NOT called on every render inside those callbacks.
     const rankingSnapshot = useMemo(() => calculateRanking(true), [calculateRanking]);
 
-    // Calculate point timeline for chart
+    // Calculate point timeline for chart — grouped by calendar date
     const calculatePointTimeline = useCallback((playerIds) => {
         if (!playerIds || playerIds.length === 0) return [];
 
@@ -688,7 +688,7 @@ function App() {
             if (player) {
                 playerData[pid] = {
                     name: player.name,
-                    points: [{ date: null, points: 0 }] // Start from 0
+                    points: [] // will add date-grouped points below
                 };
             }
         });
@@ -700,18 +700,25 @@ function App() {
         const currentPoints = {};
         playerIds.forEach(pid => currentPoints[pid] = 0);
 
+        // Helper: get YYYY-MM-DD string for a date (local timezone)
+        const toDateKey = (d) => {
+            const dt = new Date(d);
+            return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        };
+
+        // Process all matches, record snapshot per day
+        const dailySnapshots = {}; // dateKey -> { [pid]: points }
+
         sortedMatches.forEach((match) => {
             if (!match.meta?.pointDelta) return;
 
             const delta = match.meta.pointDelta;
             const winnerTeam = match.winner;
             const loserTeam = winnerTeam === 1 ? 2 : 1;
-            const matchDate = new Date(match.date);
+            const dateKey = toDateKey(match.date);
 
-            // Track if any selected player was in this match
             let hasSelectedPlayer = false;
 
-            // Update winner points
             match[`team${winnerTeam}`].forEach((pid) => {
                 if (playerIds.includes(pid)) {
                     hasSelectedPlayer = true;
@@ -719,7 +726,6 @@ function App() {
                 }
             });
 
-            // Update loser points
             match[`team${loserTeam}`].forEach((pid) => {
                 if (playerIds.includes(pid)) {
                     hasSelectedPlayer = true;
@@ -727,17 +733,36 @@ function App() {
                 }
             });
 
-            // Add data point if any selected player participated
+            // Always snapshot end-of-day state (overwrite if multiple matches same day)
             if (hasSelectedPlayer) {
-                playerIds.forEach(pid => {
-                    if (playerData[pid]) {
-                        playerData[pid].points.push({
-                            date: matchDate,
-                            points: currentPoints[pid]
-                        });
-                    }
-                });
+                dailySnapshots[dateKey] = { ...currentPoints };
             }
+        });
+
+        // Convert daily snapshots to sorted array of data points
+        const sortedDateKeys = Object.keys(dailySnapshots).sort();
+
+        // Add starting point (day before first date) with 0
+        playerIds.forEach(pid => {
+            if (playerData[pid]) {
+                playerData[pid].points.push({ date: null, points: 0 });
+            }
+        });
+
+        sortedDateKeys.forEach(dateKey => {
+            const [y, m, d] = dateKey.split('-').map(Number);
+            // Use noon to avoid timezone ambiguity
+            const dateObj = new Date(y, m - 1, d, 12, 0, 0);
+            const snapshot = dailySnapshots[dateKey];
+
+            playerIds.forEach(pid => {
+                if (playerData[pid]) {
+                    playerData[pid].points.push({
+                        date: dateObj,
+                        points: snapshot[pid] ?? 0
+                    });
+                }
+            });
         });
 
         return Object.keys(playerData).map(pid => playerData[pid]);
@@ -795,18 +820,41 @@ function App() {
     // multiple users submit matches at the same time.
     const updatePlayerStats = useCallback(async (playerIds, pointDelta, isWinner) => {
         try {
-            const updates = playerIds.map((playerId) =>
-                supabase.rpc('increment_player_stats', {
-                    p_player_id: playerId,
-                    p_points_delta: isWinner ? pointDelta : -pointDelta,
-                    p_is_winner: isWinner,
-                })
+            const results = await Promise.all(
+                playerIds.map((playerId) =>
+                    supabase.rpc('increment_player_stats', {
+                        p_player_id: playerId,
+                        p_points_delta: isWinner ? pointDelta : -pointDelta,
+                        p_is_winner: isWinner,
+                    })
+                )
             );
-            await Promise.all(updates);
+
+            // supabase.rpc() does NOT throw on failure — check each result
+            const rpcErrors = results.filter(r => r.error);
+            if (rpcErrors.length > 0) {
+                console.warn('RPC increment_player_stats failed, falling back to direct update:', rpcErrors.map(r => r.error));
+                // Fallback: direct update for each player
+                await Promise.all(
+                    playerIds.map(async (playerId) => {
+                        const player = players.find(p => p.id === playerId);
+                        if (!player) return;
+                        const { error } = await supabase
+                            .from('players')
+                            .update({
+                                current_points: (player.current_points ?? 0) + (isWinner ? pointDelta : -pointDelta),
+                                total_matches: (player.total_matches ?? 0) + 1,
+                                wins: (player.wins ?? 0) + (isWinner ? 1 : 0),
+                            })
+                            .eq('id', playerId);
+                        if (error) console.error('Fallback update failed for player', playerId, error);
+                    })
+                );
+            }
         } catch (err) {
             console.error('Lỗi cập nhật stats người chơi:', err);
         }
-    }, []);
+    }, [players]);
 
     /* =======================
        GỢI Ý CẶP ĐẤU TIẾP THEO
@@ -1359,31 +1407,31 @@ function App() {
 
         if (!data || data.length === 0) {
             return (
-                <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                <div className="empty-state">
                     Chọn người chơi để xem biểu đồ
                 </div>
             );
         }
 
-        const width = 900;
-        const height = 450;
-        const padding = { top: 40, right: 140, bottom: 80, left: 60 };
-        const chartWidth = width - padding.left - padding.right;
-        const chartHeight = height - padding.top - padding.bottom;
+        // Colors for up to 10 players
+        const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
 
-        // Collect all unique dates and sort them
-        const allDates = new Set();
+        // Collect all unique dates (by day string) and sort
+        const allDatesMap = new Map(); // dateKey -> Date object
         data.forEach(player => {
             player.points.forEach(p => {
-                if (p.date) allDates.add(p.date.getTime());
+                if (p.date) {
+                    const key = `${p.date.getFullYear()}-${p.date.getMonth()}-${p.date.getDate()}`;
+                    if (!allDatesMap.has(key)) allDatesMap.set(key, p.date);
+                }
             });
         });
-        const sortedDates = Array.from(allDates).sort((a, b) => a - b);
+        const sortedDates = Array.from(allDatesMap.values()).sort((a, b) => a - b);
+        const dateKeys = sortedDates.map(d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
 
         // Find min/max values
         let minPoints = 0;
         let maxPoints = 0;
-
         data.forEach(player => {
             player.points.forEach(p => {
                 if (p.points < minPoints) minPoints = p.points;
@@ -1391,252 +1439,186 @@ function App() {
             });
         });
 
-        // Add padding to y-axis
-        const yPadding = Math.max(10, (maxPoints - minPoints) * 0.1);
+        const yPadding = Math.max(5, (maxPoints - minPoints) * 0.15);
         minPoints = Math.floor(minPoints - yPadding);
         maxPoints = Math.ceil(maxPoints + yPadding);
 
-        const minDate = sortedDates.length > 0 ? sortedDates[0] : 0;
-        const maxDate = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : 1;
+        // Use viewBox for responsive SVG
+        const vbWidth = 600;
+        const vbHeight = 340;
+        const pad = { top: 30, right: 16, bottom: 55, left: 50 };
+        const cw = vbWidth - pad.left - pad.right;
+        const ch = vbHeight - pad.top - pad.bottom;
 
-        // Scale functions
+        // Scale: x by date index (evenly spaced), y by points
         const scaleX = (date) => {
             if (!date) return 0;
-            const timestamp = typeof date === 'number' ? date : date.getTime();
-            const range = maxDate - minDate;
-            if (range === 0) return chartWidth / 2;
-            return ((timestamp - minDate) / range) * chartWidth;
+            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+            const idx = dateKeys.indexOf(key);
+            if (idx < 0) return 0;
+            if (dateKeys.length === 1) return cw / 2;
+            return (idx / (dateKeys.length - 1)) * cw;
         };
 
-        const scaleY = (points) => {
+        const scaleY = (pts) => {
             const range = maxPoints - minPoints;
-            if (range === 0) return chartHeight / 2;
-            return chartHeight - ((points - minPoints) / range) * chartHeight;
+            if (range === 0) return ch / 2;
+            return ch - ((pts - minPoints) / range) * ch;
         };
 
-        // Format date for display
         const formatDate = (date) => {
             if (!date) return '';
-            const d = typeof date === 'number' ? new Date(date) : date;
-            return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+            return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}`;
         };
 
         const formatDateFull = (date) => {
             if (!date) return '';
-            const d = typeof date === 'number' ? new Date(date) : date;
-            return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+            return `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
         };
 
-        // Colors for different players
-        const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
-
-        // Calculate date labels (show every ~3-4 dates or all if fewer than 8)
+        // Date labels: show every Nth or all if few
+        const maxLabels = 8;
         const dateLabels = sortedDates.filter((_, idx) => {
-            if (sortedDates.length <= 8) return true;
-            const step = Math.ceil(sortedDates.length / 6);
+            if (sortedDates.length <= maxLabels) return true;
+            const step = Math.ceil(sortedDates.length / maxLabels);
             return idx % step === 0 || idx === sortedDates.length - 1;
         });
 
+        // Y-axis ticks
+        const yRange = maxPoints - minPoints;
+        const yTickCount = 5;
+        const yTicks = [];
+        for (let i = 0; i <= yTickCount; i++) {
+            yTicks.push(Math.round(minPoints + (yRange * i) / yTickCount));
+        }
+
         return (
-            <div style={{ overflowX: 'auto', paddingBottom: 20, position: 'relative' }}>
-                <svg width={width} height={height} style={{ minWidth: width }}>
-                    {/* Chart background */}
-                    <rect
-                        x={padding.left}
-                        y={padding.top}
-                        width={chartWidth}
-                        height={chartHeight}
-                        fill="#fafafa"
-                        stroke="#e5e7eb"
-                    />
-
-                    {/* Vertical grid lines for dates */}
-                    {sortedDates.map((timestamp, idx) => {
-                        const x = padding.left + scaleX(timestamp);
-                        return (
-                            <line
-                                key={idx}
-                                x1={x}
-                                y1={padding.top}
-                                x2={x}
-                                y2={padding.top + chartHeight}
-                                stroke="#f3f4f6"
-                                strokeWidth="1"
-                            />
-                        );
-                    })}
-
-                    {/* Horizontal grid lines */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-                        const y = padding.top + chartHeight * ratio;
-                        const value = Math.round(maxPoints - (maxPoints - minPoints) * ratio);
-                        return (
-                            <g key={ratio}>
-                                <line
-                                    x1={padding.left}
-                                    y1={y}
-                                    x2={padding.left + chartWidth}
-                                    y2={y}
-                                    stroke="#e5e7eb"
-                                    strokeDasharray="4,4"
-                                />
-                                <text x={padding.left - 10} y={y + 4} textAnchor="end" fontSize="12" fill="#6b7280">
-                                    {value}
-                                </text>
-                            </g>
-                        );
-                    })}
-
-                    {/* Date labels on X axis */}
-                    {dateLabels.map((timestamp, idx) => {
-                        const x = padding.left + scaleX(timestamp);
-                        return (
-                            <g key={idx}>
-                                <text
-                                    x={x}
-                                    y={padding.top + chartHeight + 20}
-                                    textAnchor="middle"
-                                    fontSize="11"
-                                    fill="#6b7280"
-                                >
-                                    {formatDate(timestamp)}
-                                </text>
-                            </g>
-                        );
-                    })}
-
-                    {/* Draw lines for each player */}
-                    {data.map((player, idx) => {
-                        const color = colors[idx % colors.length];
-                        const validPoints = player.points.filter(p => p.date !== null);
-
-                        if (validPoints.length === 0) return null;
-
-                        const pathData = validPoints
-                            .map((p, i) => {
-                                const x = padding.left + scaleX(p.date);
-                                const y = padding.top + scaleY(p.points);
-                                return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-                            })
-                            .join(' ');
-
-                        return (
-                            <g key={idx}>
-                                {/* Line */}
-                                <path
-                                    d={pathData}
-                                    fill="none"
-                                    stroke={color}
-                                    strokeWidth="2.5"
-                                />
-                                {/* Points */}
-                                {validPoints.map((p, i) => {
-                                    const x = padding.left + scaleX(p.date);
-                                    const y = padding.top + scaleY(p.points);
-                                    const pointKey = `${idx}-${i}`;
-                                    const isHovered = hoveredPoint === pointKey;
-                                    return (
-                                        <g key={i}>
-                                            <circle
-                                                cx={x}
-                                                cy={y}
-                                                r={isHovered ? "6" : "5"}
-                                                fill="white"
-                                                stroke={color}
-                                                strokeWidth={isHovered ? "3" : "2"}
-                                                style={{ cursor: 'pointer', transition: 'all 0.2s' }}
-                                                onMouseEnter={() => setHoveredPoint(pointKey)}
-                                                onMouseLeave={() => setHoveredPoint(null)}
-                                            />
-                                            {isHovered && (
-                                                <g>
-                                                    {/* Tooltip background */}
-                                                    <rect
-                                                        x={x + 10}
-                                                        y={y - 35}
-                                                        width="120"
-                                                        height="30"
-                                                        fill="rgba(0,0,0,0.85)"
-                                                        rx="4"
-                                                    />
-                                                    {/* Tooltip text */}
-                                                    <text
-                                                        x={x + 70}
-                                                        y={y - 23}
-                                                        textAnchor="middle"
-                                                        fontSize="11"
-                                                        fontWeight="600"
-                                                        fill="white"
-                                                    >
-                                                        {player.name}
-                                                    </text>
-                                                    <text
-                                                        x={x + 70}
-                                                        y={y - 10}
-                                                        textAnchor="middle"
-                                                        fontSize="10"
-                                                        fill="white"
-                                                    >
-                                                        {formatDateFull(p.date)}: {p.points} điểm
-                                                    </text>
-                                                </g>
-                                            )}
-                                        </g>
-                                    );
-                                })}
-                            </g>
-                        );
-                    })}
-
-                    {/* Axis labels */}
-                    <text
-                        x={padding.left + chartWidth / 2}
-                        y={height - 25}
-                        textAnchor="middle"
-                        fontSize="13"
-                        fontWeight="600"
-                        fill="#374151"
+            <div>
+                {/* Responsive chart */}
+                <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <svg
+                        viewBox={`0 0 ${vbWidth} ${vbHeight}`}
+                        style={{ width: '100%', height: 'auto', minWidth: 320, display: 'block' }}
+                        preserveAspectRatio="xMidYMid meet"
                     >
-                        Ngày thi đấu
-                    </text>
-                    <text
-                        x={20}
-                        y={padding.top + chartHeight / 2}
-                        textAnchor="middle"
-                        fontSize="13"
-                        fontWeight="600"
-                        fill="#374151"
-                        transform={`rotate(-90, 20, ${padding.top + chartHeight / 2})`}
-                    >
-                        Điểm số
-                    </text>
+                        {/* Background */}
+                        <rect x={pad.left} y={pad.top} width={cw} height={ch} fill="#fafbfc" rx="4" />
 
-                    {/* Legend */}
-                    {data.map((player, idx) => {
-                        const color = colors[idx % colors.length];
-                        const y = padding.top + idx * 28;
-                        return (
-                            <g key={idx}>
-                                <circle
-                                    cx={padding.left + chartWidth + 25}
-                                    cy={y}
-                                    r="5"
-                                    fill="white"
-                                    stroke={color}
-                                    strokeWidth="2"
-                                />
-                                <text
-                                    x={padding.left + chartWidth + 38}
-                                    y={y + 4}
-                                    fontSize="12"
-                                    fill="#374151"
-                                >
-                                    {player.name}
+                        {/* Horizontal grid + Y labels */}
+                        {yTicks.map((val, i) => {
+                            const y = pad.top + scaleY(val);
+                            return (
+                                <g key={i}>
+                                    <line x1={pad.left} y1={y} x2={pad.left + cw} y2={y} stroke="#e5e7eb" strokeDasharray="4,4" />
+                                    <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#6b7280">{val}</text>
+                                </g>
+                            );
+                        })}
+
+                        {/* Vertical grid for date positions */}
+                        {sortedDates.map((d, idx) => {
+                            const x = pad.left + scaleX(d);
+                            return <line key={idx} x1={x} y1={pad.top} x2={x} y2={pad.top + ch} stroke="#f3f4f6" />;
+                        })}
+
+                        {/* Date labels on X axis */}
+                        {dateLabels.map((d, idx) => {
+                            const x = pad.left + scaleX(d);
+                            return (
+                                <text key={idx} x={x} y={pad.top + ch + 18} textAnchor="middle" fontSize="10" fill="#6b7280">
+                                    {formatDate(d)}
                                 </text>
-                            </g>
-                        );
-                    })}
-                </svg>
+                            );
+                        })}
+
+                        {/* X axis label */}
+                        <text x={pad.left + cw / 2} y={vbHeight - 8} textAnchor="middle" fontSize="11" fontWeight="600" fill="#374151">
+                            Ngày thi đấu
+                        </text>
+
+                        {/* Y axis label */}
+                        <text x={14} y={pad.top + ch / 2} textAnchor="middle" fontSize="11" fontWeight="600" fill="#374151" transform={`rotate(-90, 14, ${pad.top + ch / 2})`}>
+                            Điểm số
+                        </text>
+
+                        {/* Lines + points */}
+                        {data.map((player, idx) => {
+                            const color = colors[idx % colors.length];
+                            const validPoints = player.points.filter(p => p.date !== null);
+                            if (validPoints.length === 0) return null;
+
+                            const pathData = validPoints
+                                .map((p, i) => {
+                                    const x = pad.left + scaleX(p.date);
+                                    const y = pad.top + scaleY(p.points);
+                                    return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+                                })
+                                .join(' ');
+
+                            return (
+                                <g key={idx}>
+                                    <path d={pathData} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+                                    {validPoints.map((p, i) => {
+                                        const x = pad.left + scaleX(p.date);
+                                        const y = pad.top + scaleY(p.points);
+                                        const pointKey = `${idx}-${i}`;
+                                        const isHovered = hoveredPoint === pointKey;
+                                        return (
+                                            <g key={i}>
+                                                {/* Larger invisible hit area for touch */}
+                                                <circle
+                                                    cx={x} cy={y} r="12"
+                                                    fill="transparent"
+                                                    onMouseEnter={() => setHoveredPoint(pointKey)}
+                                                    onMouseLeave={() => setHoveredPoint(null)}
+                                                    onTouchStart={() => setHoveredPoint(isHovered ? null : pointKey)}
+                                                />
+                                                <circle
+                                                    cx={x} cy={y}
+                                                    r={isHovered ? "5" : "3.5"}
+                                                    fill="white"
+                                                    stroke={color}
+                                                    strokeWidth={isHovered ? "2.5" : "2"}
+                                                    style={{ pointerEvents: 'none' }}
+                                                />
+                                                {isHovered && (
+                                                    <g>
+                                                        {/* Tooltip — clamp to stay inside viewBox */}
+                                                        {(() => {
+                                                            const tw = 110;
+                                                            const th = 28;
+                                                            let tx = x + 8;
+                                                            let ty = y - th - 6;
+                                                            if (tx + tw > vbWidth - 4) tx = x - tw - 8;
+                                                            if (ty < 2) ty = y + 10;
+                                                            return (
+                                                                <>
+                                                                    <rect x={tx} y={ty} width={tw} height={th} fill="rgba(0,0,0,0.85)" rx="4" />
+                                                                    <text x={tx + tw / 2} y={ty + 11} textAnchor="middle" fontSize="9" fontWeight="600" fill="white">{player.name}</text>
+                                                                    <text x={tx + tw / 2} y={ty + 22} textAnchor="middle" fontSize="8.5" fill="rgba(255,255,255,0.85)">{formatDateFull(p.date)}: {p.points} pt</text>
+                                                                </>
+                                                            );
+                                                        })()}
+                                                    </g>
+                                                )}
+                                            </g>
+                                        );
+                                    })}
+                                </g>
+                            );
+                        })}
+                    </svg>
+                </div>
+
+                {/* Legend — below chart, wraps nicely on mobile */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', justifyContent: 'center', marginTop: 12, padding: '0 4px' }}>
+                    {data.map((player, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#374151' }}>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: colors[idx % colors.length], flexShrink: 0 }} />
+                            {player.name}
+                        </div>
+                    ))}
+                </div>
             </div>
         );
     };
@@ -2737,14 +2719,14 @@ function App() {
                         {/* Tab Biểu đồ */}
                         {activeTab === "chart" && (
                             <section className="section">
-                                <h2 className="section-title">Biểu Đồ Điểm Số Theo Thời Gian</h2>
+                                <h2 className="section-title">Biểu Đồ Điểm Số Theo Ngày</h2>
 
                                 {/* Player selection */}
-                                <div style={{ marginBottom: 20 }}>
-                                    <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
-                                        Chọn người chơi để so sánh (tối đa 6 người)
-                                    </h3>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#475569' }}>
+                                        Chọn người chơi để so sánh (tối đa 10)
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                         {playerFilterOptions
                                             .filter(p => !p.disabled)
                                             .map(player => {
@@ -2752,23 +2734,19 @@ function App() {
                                                 return (
                                                     <button
                                                         key={player.id}
-                                                        className={isSelected ? "btn btn-primary" : "btn"}
-                                                        style={{
-                                                            padding: '8px 12px',
-                                                            fontSize: 13,
-                                                            opacity: !isSelected && chartPlayerIds.length >= 6 ? 0.5 : 1,
-                                                            cursor: !isSelected && chartPlayerIds.length >= 6 ? 'not-allowed' : 'pointer'
-                                                        }}
+                                                        className={isSelected ? "filter-chip active" : "filter-chip"}
                                                         onClick={() => {
                                                             if (isSelected) {
-                                                                // Remove player
                                                                 setChartPlayerIds(chartPlayerIds.filter(id => id !== player.id));
-                                                            } else if (chartPlayerIds.length < 6) {
-                                                                // Add player
+                                                            } else if (chartPlayerIds.length < 10) {
                                                                 setChartPlayerIds([...chartPlayerIds, player.id]);
                                                             }
                                                         }}
-                                                        disabled={!isSelected && chartPlayerIds.length >= 6}
+                                                        disabled={!isSelected && chartPlayerIds.length >= 10}
+                                                        style={{
+                                                            opacity: !isSelected && chartPlayerIds.length >= 10 ? 0.4 : 1,
+                                                            cursor: !isSelected && chartPlayerIds.length >= 10 ? 'not-allowed' : 'pointer'
+                                                        }}
                                                     >
                                                         {player.name}
                                                     </button>
@@ -2778,16 +2756,16 @@ function App() {
                                 </div>
 
                                 {/* Chart */}
-                                <div style={{ background: '#fff', borderRadius: 8, padding: 20, border: '1px solid #e6eef7' }}>
+                                <div style={{ background: '#fff', borderRadius: 12, padding: '16px 8px 8px', border: '1px solid #e2e8f0' }}>
                                     <LineChart data={calculatePointTimeline(chartPlayerIds)} />
                                 </div>
 
                                 {/* Stats summary */}
                                 {chartPlayerIds.length > 0 && (
-                                    <div style={{ marginTop: 20 }}>
-                                        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#374151' }}>
+                                    <div style={{ marginTop: 16 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: '#374151' }}>
                                             Thống kê
-                                        </h3>
+                                        </div>
                                         <div className="stats-grid">
                                             {chartPlayerIds.map(playerId => {
                                                 const player = players.find(p => p.id === playerId);
