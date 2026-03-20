@@ -584,11 +584,15 @@ function App() {
             await updatePlayerStats(team1.players, pointDelta, winner === 1);
             await updatePlayerStats(team2.players, pointDelta, winner === 2);
 
-            // Optimistic local update — cập nhật state ngay để UI phản ánh đúng
-            // mà không cần đợi DB read-after-write consistency
+            // Cập nhật local state ngay lập tức — không đợi DB
+            // team1.players / team2.players chứa number IDs (từ player.id của Supabase)
+            const team1Set = new Set(team1.players.map(id => Number(id)));
+            const team2Set = new Set(team2.players.map(id => Number(id)));
+
             setPlayers(prev => prev.map(p => {
-                const inTeam1 = team1.players.includes(p.id);
-                const inTeam2 = team2.players.includes(p.id);
+                const pid = Number(p.id);
+                const inTeam1 = team1Set.has(pid);
+                const inTeam2 = team2Set.has(pid);
                 if (!inTeam1 && !inTeam2) return p;
                 const isWin = (inTeam1 && winner === 1) || (inTeam2 && winner === 2);
                 return {
@@ -598,11 +602,10 @@ function App() {
                     wins: (p.wins ?? 0) + (isWin ? 1 : 0),
                 };
             }));
-            setMatches(prev => [...prev, { ...newMatch, id: Date.now() }]);
 
-            // Background: fetch từ DB để đồng bộ chính xác (không block UI)
-            fetchMatches();
-            fetchPlayers();
+            // Reload matches để history cập nhật, KHÔNG reload players
+            // vì DB có thể chưa commit kịp → sẽ ghi đè state đúng bằng data cũ
+            await fetchMatches();
 
             try {
                 // immediately recompute suggestions using the fresh data
